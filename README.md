@@ -2,11 +2,14 @@
 
 <p align="center">
   <b>Write a detection once. Get Cortex XDR XQL and Splunk SPL. Prove it with test events.</b><br>
-  29 hunts for the things that actually show up in Windows intrusions, from the first macro to deleted shadow copies.
+  29 hunts for the things that actually show up in Windows intrusions, from the first macro to deleted shadow copies.<br>
+  <b>Try them live: <a href="https://detections.rayenskhiri.online">detections.rayenskhiri.online</a></b>
 </p>
 
 <p align="center">
   <a href="https://github.com/Raynskhiri/detection-library/actions/workflows/tests.yml"><img src="https://github.com/Raynskhiri/detection-library/actions/workflows/tests.yml/badge.svg" alt="Tests"></a>
+  <a href="https://github.com/Raynskhiri/detection-library/actions/workflows/security.yml"><img src="https://github.com/Raynskhiri/detection-library/actions/workflows/security.yml/badge.svg" alt="Security"></a>
+  <a href="https://github.com/Raynskhiri/detection-library/releases/tag/latest"><img src="https://img.shields.io/badge/download-query%20packs-FF6B1A" alt="Query packs"></a>
   <img src="https://img.shields.io/badge/rules-29-F97316" alt="29 rules">
   <img src="https://img.shields.io/badge/output-Cortex%20XQL%20%7C%20Splunk%20SPL-FA582D" alt="XQL and SPL">
   <img src="https://img.shields.io/badge/mapped%20to-MITRE%20ATT%26CK-C8102E" alt="MITRE ATT&CK">
@@ -25,6 +28,18 @@ miss, or what to do when one fires. Every rule here comes with four things:
 2. **Two native outputs.** Ready-to-paste XQL for Cortex XDR (`xdr_data`) and SPL for Splunk with Sysmon.
 3. **Proof.** Events that must fire and events that must not. CI runs the rule *and the compiled XQL and SPL* against them.
 4. **What to do next.** Triage steps and the false positives you will actually meet.
+
+## Detection Playground
+
+[![Detection Playground](site/og.png)](https://detections.rayenskhiri.online)
+
+**[detections.rayenskhiri.online](https://detections.rayenskhiri.online)** runs every rule in your browser:
+
+* **Type a command line or paste a Sysmon event** (XML from Event Viewer, or JSON) and see which rules fire, why each one fired, the triage steps, and the XQL and SPL to copy.
+* **Replay an intrusion**: twelve steps from a phishing document to ransomware, with one step of normal admin work in the middle. Watch each detection light up on an ATT&CK board, and check that the normal step stays quiet.
+* **Nothing leaves the page.** No backend, no analytics, a strict Content Security Policy.
+
+The page uses a small JavaScript engine ([`site/engine.js`](site/engine.js)). CI checks it against the Python reference on more than 800 events, so the playground can't drift from the rules.
 
 ## One rule, both languages
 
@@ -164,7 +179,19 @@ Field names per log source are in [`detlib/schema.py`](detlib/schema.py).
   so a careless `not filter` would silently hide events that lack the field. The compiler adds null guards, and the
   tests prove they work.
 * **Mutation-checked.** Removing the null guard, the `(?i)` flag or the string escaping makes the suite fail.
-* **Drift.** CI fails if `build/` or `docs/` are out of date with the rules.
+* **Browser engine.** The playground's JavaScript engine is run in Node against every test event, every event with a field removed, and the intrusion scenario. Python and JavaScript must give the same answer.
+* **Intrusion scenario.** [`scenarios/intrusion.yml`](scenarios/intrusion.yml) lists the exact rules each step must fire, including a benign step that must fire nothing.
+* **Drift.** CI fails if `build/`, `docs/` or `site/data/` are out of date with the rules.
+
+## CI/CD
+
+| Pipeline | What it does |
+|---|---|
+| [Tests](.github/workflows/tests.yml) | Python 3.10, 3.12 and 3.13, plus the browser engine in Node, on every push and pull request |
+| [Release](.github/workflows/release.yml) | When Tests pass on `main`, publishes the XQL and SPL packs, the ATT&CK layer and checksums to the [`latest` release](https://github.com/Raynskhiri/detection-library/releases/tag/latest). A `v*` tag creates a versioned release |
+| [Security](.github/workflows/security.yml) | gitleaks secret scan, CodeQL (Python and JavaScript, security-extended), pip-audit, weekly |
+| Deploy | Vercel redeploys the playground from `site/` on every push to `main` |
+| [Dependabot](.github/dependabot.yml) | Weekly updates for Actions and pip |
 
 **Honest limit:** the interpreter is not Cortex and not Splunk. The generated queries have not yet been run
 against a live XDR tenant or Splunk instance from this repository. If one errors on your platform, please open

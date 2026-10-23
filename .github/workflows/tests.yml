@@ -8,7 +8,7 @@ permissions:
   contents: read
 
 jobs:
-  test:
+  python:
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -19,10 +19,23 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
       - run: pip install -r requirements.txt pytest
-      - name: Rule tests
+      - name: Rule tests and intrusion scenario
         run: python -m detlib test
-      - name: Compiled XQL and SPL agree with the rules
+      - name: Compiled XQL/SPL and the browser engine agree with the rules
         run: python -m pytest -q
-      - name: build/ and docs/ are up to date
+      - name: build/, docs/ and site/data are up to date
         run: python -m detlib build --check
+
+  browser-engine:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: Playground engine tests (no dependencies)
+        run: node --test site/engine.test.mjs

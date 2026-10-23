@@ -1,0 +1,179 @@
+// Detection engine for the browser. Same semantics as detlib/rule.py:matches().
+// CI runs this file in Node against every rule's test events and the intrusion
+// scenario, so the playground can never drift from the Python reference.
+
+// ---------------------------------------------------------------- matching
+
+function ipv4ToInt(ip) {
+  const parts = String(ip).trim().split(".");
+  if (parts.length !== 4) return null;
+  let n = 0;
+  for (const p of parts) {
+    if (!/^\d{1,3}$/.test(p)) return null;
+    const v = Number(p);
+    if (v > 255) return null;
+    n = n * 256 + v;
+  }
+  return n;
+}
+
+function inCidr(ip, cidr) {
+  const [net, bitsRaw] = cidr.split("/");
+  const bits = bitsRaw === undefined ? 32 : Number(bitsRaw);
+  const a = ipv4ToInt(ip);
+  const b = ipv4ToInt(net);
+  if (a === null || b === null) return false;
+  if (bits === 0) return true;
+  const size = 2 ** (32 - bits);
+  return Math.floor(a / size) === Math.floor(b / size);
+}
+
+const regexCache = new Map();
+function rx(pattern) {
+  if (!regexCache.has(pattern)) regexCache.set(pattern, new RegExp(pattern, "i"));
+  return regexCache.get(pattern);
+}
+
+function valueMatches(op, actual, expected) {
+  const a = actual.toLowerCase();
+  const e = expected.toLowerCase();
+  switch (op) {
+    case "eq": return a === e;
+    case "contains": return a.includes(e);
+    case "startswith": return a.startsWith(e);
+    case "endswith": return a.endsWith(e);
+    case "re": return rx(expected).test(actual);
+    case "cidr": return inCidr(actual, expected);
+    default: throw new Error(`unknown op ${op}`);
+  }
+}
+
+function predicateMatches(p, event) {
+  const raw = event[p.field];
+  if (raw === undefined || raw === null) return false;
+  const actual = String(raw);
+  const hits = p.values.map((v) => valueMatches(p.op, actual, v));
+  return p.all ? hits.every(Boolean) : hits.some(Boolean);
+}
+
+function evalNode(node, rule, event) {
+  if ("sel" in node) return rule.selections[node.sel].every((p) => predicateMatches(p, event));
+  if ("not" in node) return !evalNode(node.not, rule, event);
+  if ("and" in node) return evalNode(node.and[0], rule, event) && evalNode(node.and[1], rule, event);
+  if ("or" in node) return evalNode(node.or[0], rule, event) || evalNode(node.or[1], rule, event);
+  throw new Error("bad condition node");
+}
+
+export function matches(rule, event) {
+  return evalNode(rule.condition, rule, event);
+}
+
+/** Which selections were true for this event, for the "why it fired" view. */
+export function explain(rule, event) {
+  const out = {};
+  for (const [name, preds] of Object.entries(rule.selections)) {
+    out[name] = preds.map((p) => ({ ...p, hit: predicateMatches(p, event), actual: event[p.field] }));
+  }
+  return out;
+}
+
+export function evaluate(rules, logsource, event) {
+  return rules.filter((r) => r.logsource === logsource && matches(r, event));
+}
+
+// ---------------------------------------------------------------- input parsing
+
+const basename = (path) => {
+  if (!path) return path;
+  const parts = String(path).split(/[\\/]/);
+  return parts[parts.length - 1];
+};
+
+const XML_DATA = /<Data\s+Name=["']([^"']+)["']\s*(?:\/>|>([\s\S]*?)<\/Data>)/gi;
+const XML_EID = /<EventID[^>]*>\s*(\d+)\s*<\/EventID>/i;
+
+function xmlUnescape(s) {
+  return s.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'").replace(/&#(\d+);/g, (_, d) => String.fromCharCode(Number(d)))
+    .replace(/&amp;/g, "&");
+}
+
+const SYSMON = {
+  1: "process_creation", 3: "network_connection", 11: "file_event",
+  13: "registry_set", 22: "dns_query",
+};
+
+/** Map Sysmon field names (from XML or JSON) to the portable model. */
+export function fromSysmon(eventId, d) {
+  const logsource = SYSMON[eventId];
+  if (!logsource) throw new Error(`Sysmon event ID ${eventId} is not covered (supported: 1, 3, 11, 13, 22)`);
+  const ev = {};
+  const set = (k, v) => { if (v !== undefined && v !== null && v !== "") ev[k] = String(v); };
+  set("process.path", d.Image);
+  set("process.name", basename(d.Image));
+  set("user", d.User);
+  if (logsource === "process_creation") {
+    set("process.command_line", d.CommandLine);
+    set("parent.path", d.ParentImage);
+    set("parent.name", basename(d.ParentImage));
+    set("parent.command_line", d.ParentCommandLine);
+  } else if (logsource === "network_connection") {
+    set("net.remote_ip", d.DestinationIp);
+    set("net.remote_port", d.DestinationPort);
+  } else if (logsource === "dns_query") {
+    set("dns.query", d.QueryName);
+  } else if (logsource === "registry_set") {
+    if (d.TargetObject) {
+      const i = d.TargetObject.lastIndexOf("\\");
+      set("registry.key", i >= 0 ? d.TargetObject.slice(0, i) : d.TargetObject);
+      set("registry.value", i >= 0 ? d.TargetObject.slice(i + 1) : "");
+    }
+    set("registry.data", d.Details);
+  } else if (logsource === "file_event") {
+    set("file.path", d.TargetFilename);
+    set("file.name", basename(d.TargetFilename));
+  }
+  return { logsource, event: ev };
+}
+
+export function parseSysmonXml(xml) {
+  const m = XML_EID.exec(xml);
+  if (!m) throw new Error("No <EventID> found. Paste the full event XML (Event Viewer, Details tab, XML View).");
+  const data = {};
+  for (const [, name, value] of xml.matchAll(XML_DATA)) data[name] = xmlUnescape((value || "").trim());
+  return fromSysmon(Number(m[1]), data);
+}
+
+export function parseJson(text, fieldNames) {
+  const obj = JSON.parse(text);
+  if (obj.EventID !== undefined || obj.EventCode !== undefined || obj.event_id !== undefined) {
+    return fromSysmon(Number(obj.EventID ?? obj.EventCode ?? obj.event_id), obj);
+  }
+  if (obj.logsource && obj.event) return { logsource: obj.logsource, event: obj.event };
+  const keys = Object.keys(obj);
+  const guess = Object.entries(fieldNames).find(([, fields]) => keys.every((k) => fields.includes(k)) &&
+    keys.some((k) => !["process.name", "process.path", "process.command_line", "user"].includes(k)));
+  return { logsource: guess ? guess[0] : "process_creation", event: obj };
+}
+
+/** A bare command line, as an analyst would copy it from an alert. */
+export function parseCommandLine(line, parent) {
+  const cmd = line.trim();
+  let first;
+  if (cmd.startsWith('"')) first = cmd.slice(1, cmd.indexOf('"', 1) > 0 ? cmd.indexOf('"', 1) : undefined);
+  else first = cmd.split(/\s+/)[0];
+  let name = basename(first).toLowerCase();
+  if (name && !name.includes(".")) name += ".exe";
+  const event = { "process.name": name, "process.command_line": cmd };
+  if (first.includes("\\")) event["process.path"] = first;
+  if (parent) event["parent.name"] = parent.toLowerCase();
+  return { logsource: "process_creation", event };
+}
+
+export function autoParse(text, fieldNames, parent) {
+  const t = text.trim();
+  if (!t) return null;
+  if (t.startsWith("<")) return { kind: "Sysmon XML", ...parseSysmonXml(t) };
+  if (t.startsWith("{")) return { kind: "JSON", ...parseJson(t, fieldNames) };
+  return { kind: "Command line", ...parseCommandLine(t, parent) };
+}

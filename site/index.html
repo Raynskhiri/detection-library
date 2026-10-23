@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Detection Playground · Rayen Skhiri</title>
+<meta name="description" content="Throw an attack at 29 detections. Type a command line or paste a Sysmon event and see which rules fire, with ATT&CK mapping, triage steps and ready-to-paste Cortex XQL and Splunk SPL. Runs entirely in your browser.">
+<meta property="og:title" content="Detection Playground">
+<meta property="og:description" content="Type a command line or paste a Sysmon event. See which of 29 detections fire, with Cortex XQL and Splunk SPL.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://detections.rayenskhiri.online/">
+<meta property="og:image" content="https://detections.rayenskhiri.online/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="theme-color" content="#0A0C10">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,300..900&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<a class="skip" href="#play">Skip to the playground</a>
+
+<header class="top">
+  <div class="wrap bar">
+    <a class="brand" href="./">
+      <span class="logo" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 4.5 6v5.5c0 4.6 3.1 8.4 7.5 9.5 4.4-1.1 7.5-4.9 7.5-9.5V6L12 3Z"/><circle cx="12" cy="11.5" r="2.6"/><path d="m14 13.5 2.2 2.2"/></svg></span>
+      <span><b>Detection Playground</b><small>by Rayen Skhiri</small></span>
+    </a>
+    <nav class="links" aria-label="Main">
+      <a href="#play">Playground</a>
+      <a href="#replay">Intrusion replay</a>
+      <a href="#rules">All rules</a>
+      <a href="https://github.com/Raynskhiri/detection-library">GitHub</a>
+      <a class="cta" href="https://rayenskhiri.online">rayenskhiri.online</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <section class="hero">
+    <div class="wrap">
+      <p class="eyebrow">// <span id="n-rules">29</span> detections · Cortex XQL · Splunk SPL · MITRE ATT&amp;CK</p>
+      <h1>Throw an attack at <span class="hl">my detections.</span></h1>
+      <p class="lead">Type a command line or paste a Sysmon event. Every rule runs right here in your browser,
+        the same rules CI tests on every commit. Nothing you paste leaves this page.</p>
+    </div>
+  </section>
+
+  <section id="play" class="play" aria-labelledby="play-title">
+    <div class="wrap grid">
+      <div class="card input">
+        <div class="card-head">
+          <h2 id="play-title">Event</h2>
+          <span class="chip" id="kind" aria-live="polite">Waiting for input</span>
+        </div>
+        <label class="vh" for="raw">Command line, Sysmon XML or JSON</label>
+        <textarea id="raw" spellcheck="false" autocomplete="off" placeholder="rundll32.exe C:\Windows\System32\comsvcs.dll, MiniDump 624 C:\temp\l.dmp full
+
+or paste a Sysmon event (Event Viewer, Details, XML View), or JSON"></textarea>
+        <div class="row">
+          <label for="parent">Parent process <span class="opt">(optional, command lines only)</span></label>
+          <input id="parent" type="text" placeholder="winword.exe" spellcheck="false" autocomplete="off">
+        </div>
+        <p class="try">Try one:</p>
+        <div class="samples" id="samples"></div>
+        <details class="parsed" id="parsed-wrap">
+          <summary>What the engine sees</summary>
+          <table class="kv" id="parsed"></table>
+        </details>
+      </div>
+
+      <div class="results" aria-live="polite" aria-labelledby="res-title">
+        <div class="res-head">
+          <h2 id="res-title">Detections</h2>
+          <span class="count" id="count"></span>
+        </div>
+        <div id="hits"></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="replay" class="replay" aria-labelledby="replay-title">
+    <div class="wrap">
+      <div class="sec-head">
+        <div>
+          <p class="eyebrow">// intrusion replay</p>
+          <h2 class="title" id="replay-title">From a phishing document to ransomware</h2>
+          <p class="sub">Twelve real-looking steps across one morning on <code id="host">FIN-LAPTOP-07</code>. One of them is normal admin work. Watch what fires.</p>
+        </div>
+        <div class="controls">
+          <button class="btn primary" id="btn-play" type="button">Play</button>
+          <button class="btn" id="btn-step" type="button">Step</button>
+          <button class="btn" id="btn-reset" type="button">Reset</button>
+        </div>
+      </div>
+      <div class="replay-grid">
+        <ol class="timeline" id="timeline"></ol>
+        <aside class="board" aria-label="Detection board">
+          <div class="meter">
+            <div><b id="m-steps">0/12</b><span>steps</span></div>
+            <div><b id="m-dets">0</b><span>detections</span></div>
+            <div><b id="m-tactics">0</b><span>tactics seen</span></div>
+            <div><b id="m-fp" class="good">0</b><span>false positives</span></div>
+          </div>
+          <div class="tactics" id="board"></div>
+        </aside>
+      </div>
+    </div>
+  </section>
+
+  <section id="rules" class="all" aria-labelledby="rules-title">
+    <div class="wrap">
+      <div class="sec-head">
+        <div>
+          <p class="eyebrow">// coverage</p>
+          <h2 class="title" id="rules-title">Every rule, by tactic</h2>
+          <p class="sub">Click a rule to load one of its test events into the playground.</p>
+        </div>
+      </div>
+      <div class="cov" id="cov"></div>
+    </div>
+  </section>
+
+  <section class="how" aria-labelledby="how-title">
+    <div class="wrap how-grid">
+      <div>
+        <p class="eyebrow">// how it is built</p>
+        <h2 class="title" id="how-title">One rule, three engines, one truth</h2>
+      </div>
+      <ol class="steps">
+        <li><b>Written once.</b> Each detection is a short YAML rule with test events that must fire and must not.</li>
+        <li><b>Compiled.</b> Python turns it into Cortex XDR XQL and Splunk SPL, with null guards so missing fields never hide an alert.</li>
+        <li><b>Proven three ways.</b> On every push, CI checks the rule, the compiled XQL and SPL, and this page's JavaScript engine against the same 800+ events. They must all agree.</li>
+        <li><b>Shipped.</b> Every push to main redeploys this page. Once CI is green, the XQL and SPL packs and the ATT&amp;CK layer are published as a GitHub release.</li>
+      </ol>
+    </div>
+  </section>
+</main>
+
+<footer class="foot">
+  <div class="wrap">
+    <span>Built by <a href="https://rayenskhiri.online">Rayen Skhiri</a>, SOC analyst and AppSec engineer.</span>
+    <span><a href="https://github.com/Raynskhiri/detection-library">Source and rules on GitHub</a> · MIT · Test events are synthetic.</span>
+  </div>
+</footer>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>
