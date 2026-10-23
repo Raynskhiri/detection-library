@@ -1,0 +1,32 @@
+id: DL-0011
+title: Service created with a suspicious binary path
+description: >
+  sc create registers a service whose binPath runs cmd, PowerShell, a LOLBin or a file from
+  a user-writable folder. Services run as SYSTEM, so this is both persistence and privilege
+  escalation. Remote service creation is also how PsExec-like tools move laterally.
+attack: [T1543.003, T1569.002]
+tactic: persistence
+severity: high
+logsource: process_creation
+detection:
+  selection:
+    process.name: sc.exe
+    process.command_line|contains: ' create '
+  suspicious_path:
+    process.command_line|contains: ['\appdata\', '\temp\', '\users\public\', '\programdata\', powershell,
+                                    'cmd /c', 'cmd.exe /c', '%comspec%', mshta, rundll32, regsvr32]
+  condition: selection and suspicious_path
+false_positives:
+  - Installers that create a service from ProgramData. Allowlist by signer.
+triage:
+  - Query the service (sc qc <name>) and inspect the binary.
+  - If the command targeted another host (sc \\host create), investigate that host too.
+tests:
+  match:
+    - process.name: sc.exe
+      process.command_line: 'sc \\10.0.0.5 create upd binPath= "cmd.exe /c powershell -enc AAAA" start= auto'
+  no_match:
+    - process.name: sc.exe
+      process.command_line: 'sc create VendorSvc binPath= "C:\Program Files\Vendor\svc.exe" start= auto'
+    - process.name: sc.exe
+      process.command_line: 'sc query state= all'

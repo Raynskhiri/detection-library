@@ -1,0 +1,5 @@
+`sysmon` EventCode=3
+| eval process_name=lower(mvindex(split(Image,"\\"),-1))
+| where (lower(process_name)="certutil.exe" OR lower(process_name)="mshta.exe" OR lower(process_name)="regsvr32.exe" OR lower(process_name)="rundll32.exe" OR lower(process_name)="bitsadmin.exe" OR lower(process_name)="wscript.exe" OR lower(process_name)="cscript.exe" OR lower(process_name)="msbuild.exe" OR lower(process_name)="installutil.exe" OR lower(process_name)="cmstp.exe" OR lower(process_name)="odbcconf.exe" OR lower(process_name)="msxsl.exe" OR lower(process_name)="hh.exe") AND NOT ((isnotnull(DestinationIp) AND (cidrmatch("10.0.0.0/8", DestinationIp) OR cidrmatch("172.16.0.0/12", DestinationIp) OR cidrmatch("192.168.0.0/16", DestinationIp) OR cidrmatch("127.0.0.0/8", DestinationIp) OR cidrmatch("169.254.0.0/16", DestinationIp) OR cidrmatch("100.64.0.0/10", DestinationIp))))
+| table _time host Image DestinationIp DestinationPort
+| sort - _time

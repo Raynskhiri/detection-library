@@ -1,0 +1,48 @@
+id: DL-0001
+title: PowerShell with an encoded command
+description: >
+  PowerShell started with -EncodedCommand (or any short form PowerShell accepts, such as -enc,
+  -en, -ec or -e) followed by a Base64 blob. Attackers use it to hide the real script from
+  command-line logging and simple string matching. Admin tools rarely need it.
+attack: [T1059.001, T1027]
+tactic: execution
+severity: high
+logsource: process_creation
+detection:
+  selection:
+    process.name: [powershell.exe, pwsh.exe]
+    process.command_line|re: '\s[-/]e(c|n\w*)?\s+[A-Za-z0-9+/]{16,}={0,2}'
+  filter_sccm:
+    parent.name: ccmexec.exe
+  condition: selection and not filter_sccm
+false_positives:
+  - Configuration management agents (SCCM, some RMM tools) that wrap scripts in -EncodedCommand.
+  - Vendor installers that pass a short encoded bootstrap.
+triage:
+  - Decode the Base64 (it is UTF-16LE) and read the actual script.
+  - Check the parent process. Office, a browser or a script host as parent is a strong signal.
+  - Look for network connections and child processes from the same PowerShell process in the next minutes.
+  - If the decoded script downloads or runs code, isolate the host and collect the payload.
+tests:
+  match:
+    - process.name: powershell.exe
+      parent.name: winword.exe
+      process.command_line: 'powershell.exe -nop -w hidden -enc SQBFAFgAIAAoAE4AZQB3AC0ATwBiAGoAZQBjAHQAIABOAGUAdAAuAFcAZQBiAEMAbABpAGUAbgB0ACkA'
+    - process.name: pwsh.exe
+      parent.name: cmd.exe
+      process.command_line: 'pwsh -EncodedCommand ZQBjAGgAbwAgACIAaABlAGwAbABvACIA'
+    - process.name: POWERSHELL.EXE
+      parent.name: explorer.exe
+      process.command_line: 'PowerShell.exe -ec JABzAD0AJwBoAHQAdABwADoALwAvADEAMAAuADAA'
+  no_match:
+    - process.name: powershell.exe
+      parent.name: explorer.exe
+      process.command_line: 'powershell.exe -ExecutionPolicy Bypass -File C:\scripts\backup.ps1'
+    - process.name: powershell.exe
+      parent.name: ccmexec.exe
+      process.command_line: 'powershell.exe -NoLogo -enc JABzAD0AJwBoAHQAdABwADoALwAvADEAMAAuADAA'
+    - process.name: cmd.exe
+      parent.name: explorer.exe
+      process.command_line: 'cmd.exe /c echo -enc AAAAAAAAAAAAAAAAAAAAAAAA'
+references:
+  - https://learn.microsoft.com/powershell/module/microsoft.powershell.core/about/about_pwsh

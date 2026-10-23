@@ -1,0 +1,36 @@
+id: DL-0017
+title: SAM, SYSTEM, SECURITY hives or NTDS.dit copied for offline cracking
+description: >
+  reg save of the SAM, SYSTEM or SECURITY hive, or ntdsutil creating an IFM copy of the
+  Active Directory database. With these files an attacker gets local hashes, LSA secrets,
+  or every domain hash.
+attack: [T1003.002, T1003.003, T1003.004]
+tactic: credential-access
+severity: critical
+logsource: process_creation
+detection:
+  reg_save:
+    process.name: reg.exe
+    process.command_line|re: '\s(save|export)\s+"?(hklm|hkey_local_machine)\\(sam|system|security)"?(\s|$)'
+  ntds_ifm:
+    process.name: ntdsutil.exe
+    process.command_line|contains: [ifm, 'ac i ntds', 'activate instance ntds']
+  condition: reg_save or ntds_ifm
+false_positives:
+  - Domain controller promotion from media (IFM) planned by the AD team.
+triage:
+  - Find the output files and where they went next (copy to a share, archive, upload).
+  - On a domain controller, treat it as full domain compromise until ruled out.
+tests:
+  match:
+    - process.name: reg.exe
+      process.command_line: 'reg save HKLM\SAM C:\Users\Public\sam.save'
+    - process.name: reg.exe
+      process.command_line: 'reg.exe save hklm\system C:\temp\sys'
+    - process.name: ntdsutil.exe
+      process.command_line: 'ntdsutil "ac i ntds" "ifm" "create full C:\temp\ifm" q q'
+  no_match:
+    - process.name: reg.exe
+      process.command_line: 'reg export HKLM\SOFTWARE\Vendor C:\temp\vendor.reg'
+    - process.name: reg.exe
+      process.command_line: 'reg query HKLM\SYSTEM\CurrentControlSet\Services'

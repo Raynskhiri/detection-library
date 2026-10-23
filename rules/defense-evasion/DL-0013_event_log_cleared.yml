@@ -1,0 +1,31 @@
+id: DL-0013
+title: Windows event logs cleared from the command line
+description: >
+  wevtutil cl, Clear-EventLog, Remove-EventLog or the .NET ClearLog call wipe event logs
+  to destroy evidence. Admins very rarely clear logs by hand.
+attack: [T1070.001]
+tactic: defense-evasion
+severity: high
+logsource: process_creation
+detection:
+  wevtutil:
+    process.name: wevtutil.exe
+    process.command_line|re: '\s(cl|clear-log)\s'
+  powershell:
+    process.name: [powershell.exe, pwsh.exe]
+    process.command_line|contains: [clear-eventlog, remove-eventlog, clearlog]
+  condition: wevtutil or powershell
+false_positives:
+  - Lab or golden-image build scripts that reset logs before sealing an image.
+triage:
+  - Look for event 1102 (Security log cleared) and 104 (System log cleared) from the same time.
+  - Pull logs from the SIEM or EDR for the period before the wipe, they are still there.
+tests:
+  match:
+    - process.name: wevtutil.exe
+      process.command_line: 'wevtutil cl Security'
+    - process.name: powershell.exe
+      process.command_line: 'powershell Clear-EventLog -LogName Application,System'
+  no_match:
+    - process.name: wevtutil.exe
+      process.command_line: 'wevtutil qe Security /c:5 /f:text'

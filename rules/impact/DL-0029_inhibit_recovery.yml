@@ -1,0 +1,47 @@
+id: DL-0029
+title: Shadow copies, backups or boot recovery removed
+description: >
+  vssadmin or WMI deleting shadow copies, shrinking shadow storage, wbadmin deleting the
+  backup catalog, or bcdedit disabling recovery. Ransomware does this minutes before or
+  during encryption so the victim cannot roll back.
+attack: [T1490]
+tactic: impact
+severity: critical
+logsource: process_creation
+detection:
+  vssadmin:
+    process.name: vssadmin.exe
+    process.command_line|re: '(delete\s+shadows|resize\s+shadowstorage)'
+  wmic:
+    process.name: wmic.exe
+    process.command_line|contains|all: [shadowcopy, delete]
+  powershell:
+    process.name: [powershell.exe, pwsh.exe]
+    process.command_line|contains|all: [win32_shadowcopy, delete]
+  wbadmin:
+    process.name: wbadmin.exe
+    process.command_line|re: 'delete\s+(catalog|systemstatebackup|backup)'
+  bcdedit:
+    process.name: bcdedit.exe
+    process.command_line|contains: ['recoveryenabled no', 'bootstatuspolicy ignoreallfailures']
+  condition: vssadmin or wmic or powershell or wbadmin or bcdedit
+false_positives:
+  - Backup software rotating its own shadow copies (usually through the VSS API, not vssadmin).
+triage:
+  - Treat as active ransomware. Isolate the host now, then investigate.
+  - Check other hosts for the same command in the same minutes; it is usually pushed everywhere at once.
+tests:
+  match:
+    - process.name: vssadmin.exe
+      process.command_line: 'vssadmin.exe Delete Shadows /All /Quiet'
+    - process.name: wmic.exe
+      process.command_line: 'wmic shadowcopy delete'
+    - process.name: bcdedit.exe
+      process.command_line: 'bcdedit /set {default} recoveryenabled No'
+    - process.name: powershell.exe
+      process.command_line: 'powershell Get-WmiObject Win32_Shadowcopy | ForEach-Object { $_.Delete() }'
+  no_match:
+    - process.name: vssadmin.exe
+      process.command_line: 'vssadmin list shadows'
+    - process.name: bcdedit.exe
+      process.command_line: 'bcdedit /enum'

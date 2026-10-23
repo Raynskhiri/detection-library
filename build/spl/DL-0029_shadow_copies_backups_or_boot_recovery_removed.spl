@@ -1,0 +1,5 @@
+`sysmon` EventCode=1
+| eval process_name=lower(mvindex(split(Image,"\\"),-1)), parent_name=lower(mvindex(split(ParentImage,"\\"),-1))
+| where ((((lower(process_name)="vssadmin.exe" AND match(CommandLine, "(?i)(delete\\s+shadows|resize\\s+shadowstorage)")) OR (lower(process_name)="wmic.exe" AND (match(CommandLine, "(?i)shadowcopy") AND match(CommandLine, "(?i)delete")))) OR ((lower(process_name)="powershell.exe" OR lower(process_name)="pwsh.exe") AND (match(CommandLine, "(?i)win32_shadowcopy") AND match(CommandLine, "(?i)delete")))) OR (lower(process_name)="wbadmin.exe" AND match(CommandLine, "(?i)delete\\s+(catalog|systemstatebackup|backup)"))) OR (lower(process_name)="bcdedit.exe" AND (match(CommandLine, "(?i)recoveryenabled\\ no") OR match(CommandLine, "(?i)bootstatuspolicy\\ ignoreallfailures")))
+| table _time host User ParentImage Image CommandLine
+| sort - _time

@@ -1,0 +1,5 @@
+`sysmon` EventCode=1
+| eval process_name=lower(mvindex(split(Image,"\\"),-1)), parent_name=lower(mvindex(split(ParentImage,"\\"),-1))
+| where lower(process_name)="certutil.exe" AND (match(CommandLine, "(?i)urlcache") OR match(CommandLine, "(?i)verifyctl") OR match(CommandLine, "(?i)\\-decode") OR match(CommandLine, "(?i)/decode") OR match(CommandLine, "(?i)\\-decodehex") OR match(CommandLine, "(?i)/decodehex"))
+| table _time host User ParentImage Image CommandLine
+| sort - _time

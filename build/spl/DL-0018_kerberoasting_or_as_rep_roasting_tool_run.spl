@@ -1,0 +1,5 @@
+`sysmon` EventCode=1
+| eval process_name=lower(mvindex(split(Image,"\\"),-1)), parent_name=lower(mvindex(split(ParentImage,"\\"),-1))
+| where match(CommandLine, "(?i)kerberoast") OR match(CommandLine, "(?i)asreproast") OR match(CommandLine, "(?i)get\\-domainspnticket") OR match(CommandLine, "(?i)request\\-spnticket") OR match(CommandLine, "(?i)getuserspns") OR match(CommandLine, "(?i)getnpusers") OR match(CommandLine, "(?i)/format:hashcat")
+| table _time host User ParentImage Image CommandLine
+| sort - _time

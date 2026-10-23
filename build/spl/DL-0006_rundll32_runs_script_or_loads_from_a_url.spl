@@ -1,0 +1,5 @@
+`sysmon` EventCode=1
+| eval process_name=lower(mvindex(split(Image,"\\"),-1)), parent_name=lower(mvindex(split(ParentImage,"\\"),-1))
+| where lower(process_name)="rundll32.exe" AND (match(CommandLine, "(?i)javascript:") OR match(CommandLine, "(?i)mshtml,runhtmlapplication") OR match(CommandLine, "(?i)http://") OR match(CommandLine, "(?i)https://") OR match(CommandLine, "(?i)@ssl\\\\davwwwroot"))
+| table _time host User ParentImage Image CommandLine
+| sort - _time

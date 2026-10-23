@@ -1,0 +1,5 @@
+`sysmon` EventCode=1
+| eval process_name=lower(mvindex(split(Image,"\\"),-1)), parent_name=lower(mvindex(split(ParentImage,"\\"),-1))
+| where lower(process_name)="sharphound.exe" OR (match(CommandLine, "(?i)sharphound") OR match(CommandLine, "(?i)invoke\\-bloodhound") OR match(CommandLine, "(?i)collectionmethod") OR match(CommandLine, "(?i)bloodhound\\.py") OR match(CommandLine, "(?i)\\-\\-zipfilename"))
+| table _time host User ParentImage Image CommandLine
+| sort - _time

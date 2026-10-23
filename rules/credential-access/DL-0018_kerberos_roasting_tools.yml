@@ -1,0 +1,35 @@
+id: DL-0018
+title: Kerberoasting or AS-REP roasting tool run
+description: >
+  Command lines of Rubeus, PowerView, Invoke-Kerberoast or Impacket GetUserSPNs /
+  GetNPUsers requesting service tickets or AS-REPs to crack offline. Any domain user can
+  do this, so it is one of the first steps after an initial foothold in AD.
+attack: [T1558.003, T1558.004]
+tactic: credential-access
+severity: high
+logsource: process_creation
+detection:
+  selection:
+    process.command_line|contains: [kerberoast, asreproast, get-domainspnticket, request-spnticket,
+                                    getuserspns, getnpusers, '/format:hashcat']
+  condition: selection
+false_positives:
+  - Authorised penetration tests and red team exercises.
+triage:
+  - Pair it with Windows event 4769 on the DCs (many TGS requests with RC4, 0x17) from the same account.
+  - Rotate the passwords of the targeted service accounts and move them to long random passwords or gMSA.
+tests:
+  match:
+    - process.name: rubeus.exe
+      process.command_line: 'Rubeus.exe kerberoast /outfile:hashes.txt'
+    - process.name: powershell.exe
+      process.command_line: 'powershell -c Invoke-Kerberoast -OutputFormat Hashcat'
+    - process.name: python.exe
+      process.command_line: 'python GetUserSPNs.py corp.local/user:pass -request'
+  no_match:
+    - process.name: klist.exe
+      process.command_line: 'klist tickets'
+    - process.name: setspn.exe
+      process.command_line: 'setspn -L svc_sql'
+references:
+  - https://attack.mitre.org/techniques/T1558/003/

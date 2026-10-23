@@ -1,0 +1,33 @@
+id: DL-0026
+title: Connection to common Tor ports from a non-Tor process
+description: >
+  Outbound connections to 9001, 9030, 9050, 9051 or 9150, the default Tor relay, directory
+  and SOCKS ports, from something that is not the Tor client. Malware uses Tor for C2 and
+  ransomware groups use it for their negotiation and leak sites.
+attack: [T1090.003]
+tactic: command-and-control
+severity: medium
+logsource: network_connection
+detection:
+  tor_port:
+    net.remote_port: [9001, 9030, 9050, 9051, 9150]
+  tor_client:
+    process.name: [tor.exe, firefox.exe]
+  condition: tor_port and not tor_client
+false_positives:
+  - Unrelated services that happen to use these ports. Check the destination.
+triage:
+  - Check whether the destination IP is a known Tor relay.
+  - Identify the process and how it got there.
+tests:
+  match:
+    - process.name: svchost32.exe
+      net.remote_ip: 203.0.113.9
+      net.remote_port: '9001'
+  no_match:
+    - process.name: tor.exe
+      net.remote_ip: 203.0.113.9
+      net.remote_port: '9001'
+    - process.name: updater.exe
+      net.remote_ip: 203.0.113.9
+      net.remote_port: '443'

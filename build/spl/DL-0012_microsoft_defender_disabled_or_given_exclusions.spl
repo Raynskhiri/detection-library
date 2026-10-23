@@ -1,0 +1,5 @@
+`sysmon` EventCode=1
+| eval process_name=lower(mvindex(split(Image,"\\"),-1)), parent_name=lower(mvindex(split(ParentImage,"\\"),-1))
+| where (((lower(process_name)="powershell.exe" OR lower(process_name)="pwsh.exe") AND (match(CommandLine, "(?i)set\\-mppreference") OR match(CommandLine, "(?i)add\\-mppreference"))) AND (match(CommandLine, "(?i)disablerealtimemonitoring") OR match(CommandLine, "(?i)disablebehaviormonitoring") OR match(CommandLine, "(?i)disableioavprotection") OR match(CommandLine, "(?i)disablescriptscanning") OR match(CommandLine, "(?i)disableblockatfirstseen") OR match(CommandLine, "(?i)exclusionpath") OR match(CommandLine, "(?i)exclusionprocess") OR match(CommandLine, "(?i)exclusionextension"))) OR ((lower(process_name)="sc.exe" OR lower(process_name)="net.exe" OR lower(process_name)="net1.exe") AND match(CommandLine, "(?i)windefend"))
+| table _time host User ParentImage Image CommandLine
+| sort - _time

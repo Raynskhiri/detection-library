@@ -1,0 +1,5 @@
+`sysmon` EventCode=1
+| eval process_name=lower(mvindex(split(Image,"\\"),-1)), parent_name=lower(mvindex(split(ParentImage,"\\"),-1))
+| where ((lower(process_name)="wscript.exe" OR lower(process_name)="cscript.exe") AND (match(CommandLine, "(?i)\\\\appdata\\\\") OR match(CommandLine, "(?i)\\\\temp\\\\") OR match(CommandLine, "(?i)\\\\downloads\\\\") OR match(CommandLine, "(?i)\\\\users\\\\public\\\\") OR match(CommandLine, "(?i)\\\\desktop\\\\"))) AND match(CommandLine, "(?i)\\.(js|jse|vbs|vbe|wsf|wsh)\\b")
+| table _time host User ParentImage Image CommandLine
+| sort - _time

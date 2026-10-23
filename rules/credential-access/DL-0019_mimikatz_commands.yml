@@ -1,0 +1,30 @@
+id: DL-0019
+title: Mimikatz modules on the command line
+description: >
+  Command lines with Mimikatz module syntax (sekurlsa::, lsadump::, kerberos::, token::,
+  dpapi::, privilege::debug), including when the binary is renamed or run through
+  PowerShell (Invoke-Mimikatz).
+attack: [T1003.001, T1003.006, T1550.002, T1558.001]
+tactic: credential-access
+severity: critical
+logsource: process_creation
+detection:
+  modules:
+    process.command_line|contains: ['sekurlsa::', 'lsadump::', 'kerberos::', 'token::elevate', 'dpapi::',
+                                    'privilege::debug', 'crypto::', invoke-mimikatz]
+  condition: modules
+false_positives:
+  - Authorised red team activity.
+triage:
+  - lsadump::dcsync or lsadump::lsa on a DC means domain compromise. Escalate immediately.
+  - kerberos::golden or ::ptt means forged or injected tickets. Plan a double krbtgt reset.
+  - Reset every credential that was on the host.
+tests:
+  match:
+    - process.name: m.exe
+      process.command_line: 'm.exe "privilege::debug" "sekurlsa::logonpasswords" exit'
+    - process.name: powershell.exe
+      process.command_line: 'powershell IEX(...); Invoke-Mimikatz -Command ''"lsadump::dcsync /user:krbtgt"'''
+  no_match:
+    - process.name: cmd.exe
+      process.command_line: 'cmd /c echo hello'

@@ -1,0 +1,5 @@
+`sysmon` EventCode=3
+| eval process_name=lower(mvindex(split(Image,"\\"),-1))
+| where (DestinationPort=9001 OR DestinationPort=9030 OR DestinationPort=9050 OR DestinationPort=9051 OR DestinationPort=9150) AND NOT ((isnotnull(process_name) AND (lower(process_name)="tor.exe" OR lower(process_name)="firefox.exe")))
+| table _time host Image DestinationIp DestinationPort
+| sort - _time

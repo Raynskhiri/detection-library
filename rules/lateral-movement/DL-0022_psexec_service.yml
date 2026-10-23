@@ -1,0 +1,32 @@
+id: DL-0022
+title: PsExec service runs a command
+description: >
+  PSEXESVC.exe is the service PsExec installs on the target host. A process under it means
+  someone ran a command remotely on this host over SMB.
+attack: [T1569.002, T1021.002]
+tactic: lateral-movement
+severity: medium
+logsource: process_creation
+detection:
+  service:
+    process.name: psexesvc.exe
+  child:
+    parent.name: psexesvc.exe
+  condition: service or child
+false_positives:
+  - IT admins who use PsExec for support. Confirm the source host and account.
+triage:
+  - Find the source host in the 4624 logon (type 3) and 7045 service install events at the same time.
+  - Read the child command line.
+tests:
+  match:
+    - parent.name: psexesvc.exe
+      process.name: cmd.exe
+      process.command_line: 'cmd.exe'
+    - parent.name: services.exe
+      process.name: PSEXESVC.exe
+      process.command_line: 'C:\Windows\PSEXESVC.exe'
+  no_match:
+    - parent.name: services.exe
+      process.name: svchost.exe
+      process.command_line: 'svchost.exe -k netsvcs'

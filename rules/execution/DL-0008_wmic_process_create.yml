@@ -1,0 +1,26 @@
+id: DL-0008
+title: WMIC creates a process, locally or on another host
+description: >
+  wmic process call create starts a program through WMI. With /node it runs on a remote
+  machine, which is a common lateral movement method. Admins mostly use other tools today.
+attack: [T1047]
+tactic: execution
+severity: medium
+logsource: process_creation
+detection:
+  selection:
+    process.name: wmic.exe
+    process.command_line|contains|all: [process, call, create]
+  condition: selection
+false_positives:
+  - Older admin scripts and some software deployment tools.
+triage:
+  - Note any /node target and check that host for the started process.
+  - Confirm the account and whether it normally administers that host.
+tests:
+  match:
+    - process.name: wmic.exe
+      process.command_line: 'wmic /node:10.0.0.5 process call create "cmd.exe /c whoami > C:\out.txt"'
+  no_match:
+    - process.name: wmic.exe
+      process.command_line: 'wmic os get caption'

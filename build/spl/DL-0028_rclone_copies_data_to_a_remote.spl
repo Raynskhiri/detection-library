@@ -1,0 +1,5 @@
+`sysmon` EventCode=1
+| eval process_name=lower(mvindex(split(Image,"\\"),-1)), parent_name=lower(mvindex(split(ParentImage,"\\"),-1))
+| where match(CommandLine, "(?i)\\s(copy|copyto|sync|move)\\s") AND (lower(process_name)="rclone.exe" OR (match(CommandLine, "(?i)\\-\\-multi\\-thread\\-streams") OR match(CommandLine, "(?i)\\-\\-no\\-check\\-certificate") OR match(CommandLine, "(?i)\\-\\-transfers") OR match(CommandLine, "(?i)\\-\\-ignore\\-existing") OR match(CommandLine, "(?i)\\-\\-max\\-age") OR match(CommandLine, "(?i)\\-\\-auto\\-confirm")))
+| table _time host User ParentImage Image CommandLine
+| sort - _time

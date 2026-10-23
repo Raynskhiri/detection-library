@@ -1,0 +1,30 @@
+id: DL-0024
+title: Command started through WinRM remoting
+description: >
+  wsmprovhost.exe is the host process for PowerShell remoting (WinRM). A shell, a LOLBin or
+  a discovery command under it means someone ran it remotely, for example with
+  Enter-PSSession or evil-winrm.
+attack: [T1021.006]
+tactic: lateral-movement
+severity: medium
+logsource: process_creation
+detection:
+  selection:
+    parent.name: wsmprovhost.exe
+    process.name: [cmd.exe, powershell.exe, whoami.exe, net.exe, net1.exe, nltest.exe, rundll32.exe,
+                   regsvr32.exe, certutil.exe, reg.exe, schtasks.exe, sc.exe]
+  condition: selection
+false_positives:
+  - Admins and management tools using PowerShell remoting. Baseline the source hosts.
+triage:
+  - Find the source IP in Microsoft-Windows-WinRM/Operational and the type 3 logon.
+  - Check if the account normally administers this host.
+tests:
+  match:
+    - parent.name: wsmprovhost.exe
+      process.name: whoami.exe
+      process.command_line: 'whoami /all'
+  no_match:
+    - parent.name: wsmprovhost.exe
+      process.name: conhost.exe
+      process.command_line: 'conhost.exe'

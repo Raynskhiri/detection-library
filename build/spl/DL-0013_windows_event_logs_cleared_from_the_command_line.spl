@@ -1,0 +1,5 @@
+`sysmon` EventCode=1
+| eval process_name=lower(mvindex(split(Image,"\\"),-1)), parent_name=lower(mvindex(split(ParentImage,"\\"),-1))
+| where (lower(process_name)="wevtutil.exe" AND match(CommandLine, "(?i)\\s(cl|clear-log)\\s")) OR ((lower(process_name)="powershell.exe" OR lower(process_name)="pwsh.exe") AND (match(CommandLine, "(?i)clear\\-eventlog") OR match(CommandLine, "(?i)remove\\-eventlog") OR match(CommandLine, "(?i)clearlog")))
+| table _time host User ParentImage Image CommandLine
+| sort - _time

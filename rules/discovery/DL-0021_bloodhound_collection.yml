@@ -1,0 +1,29 @@
+id: DL-0021
+title: BloodHound collector (SharpHound) run
+description: >
+  SharpHound or Invoke-BloodHound collects sessions, ACLs, group membership and trusts so
+  an attacker can graph a path to Domain Admin.
+attack: [T1087.002, T1069.002, T1482]
+tactic: discovery
+severity: high
+logsource: process_creation
+detection:
+  name:
+    process.name: sharphound.exe
+  args:
+    process.command_line|contains: [sharphound, invoke-bloodhound, collectionmethod, bloodhound.py, '--zipfilename']
+  condition: name or args
+false_positives:
+  - Authorised AD security assessments, which should be scheduled and known.
+triage:
+  - Find the output ZIP (usually in the working directory) and check if it left the host.
+  - Expect LDAP and SMB session enumeration against many hosts from this machine at the same time.
+tests:
+  match:
+    - process.name: sharphound.exe
+      process.command_line: 'SharpHound.exe -c All'
+    - process.name: powershell.exe
+      process.command_line: 'powershell Invoke-BloodHound -CollectionMethod All -ZipFileName x.zip'
+  no_match:
+    - process.name: powershell.exe
+      process.command_line: 'powershell Get-ADUser -Filter *'

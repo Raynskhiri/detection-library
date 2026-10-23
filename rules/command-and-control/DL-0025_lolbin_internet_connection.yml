@@ -1,0 +1,40 @@
+id: DL-0025
+title: Living-off-the-land binary connects to the internet
+description: >
+  certutil, mshta, regsvr32, rundll32, bitsadmin, a script host, msbuild, installutil,
+  cmstp or odbcconf opens a connection to a public IP. These binaries are signed by
+  Microsoft and are used to download or talk to C2 without dropping a new tool.
+attack: [T1105, T1218]
+tactic: command-and-control
+severity: medium
+logsource: network_connection
+detection:
+  lolbin:
+    process.name: [certutil.exe, mshta.exe, regsvr32.exe, rundll32.exe, bitsadmin.exe, wscript.exe, cscript.exe,
+                   msbuild.exe, installutil.exe, cmstp.exe, odbcconf.exe, msxsl.exe, hh.exe]
+  internal:
+    net.remote_ip|cidr: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 127.0.0.0/8, 169.254.0.0/16,
+                         100.64.0.0/10]
+  condition: lolbin and not internal
+false_positives:
+  - rundll32 hosting legitimate control panel or update components that call vendor clouds.
+  - Proxy setups where every connection goes to a public proxy IP. Exclude the proxy.
+  - IPv4 only. In XDR, IPv6 peers are in a separate field and are not covered by this rule.
+triage:
+  - Resolve the IP (passive DNS) and check its reputation and hosting.
+  - Look at the process command line from the matching process start event.
+tests:
+  match:
+    - process.name: mshta.exe
+      net.remote_ip: 203.0.113.9
+      net.remote_port: '443'
+    - process.name: certutil.exe
+      net.remote_ip: 198.51.100.7
+      net.remote_port: '80'
+  no_match:
+    - process.name: certutil.exe
+      net.remote_ip: 10.0.0.5
+      net.remote_port: '80'
+    - process.name: chrome.exe
+      net.remote_ip: 203.0.113.9
+      net.remote_port: '443'

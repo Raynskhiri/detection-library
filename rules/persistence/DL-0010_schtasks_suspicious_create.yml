@@ -1,0 +1,32 @@
+id: DL-0010
+title: Scheduled task created to run a script host or a file in a user-writable path
+description: >
+  schtasks /create with an action that launches PowerShell, a script host, a LOLBin, a URL
+  or a file in AppData, Temp or Public. Scheduled tasks are used for persistence and for
+  running code as SYSTEM.
+attack: [T1053.005]
+tactic: persistence
+severity: medium
+logsource: process_creation
+detection:
+  selection:
+    process.name: schtasks.exe
+    process.command_line|contains: '/create'
+  suspicious_action:
+    process.command_line|contains: ['\appdata\', '\temp\', '\users\public\', powershell, mshta, wscript, cscript,
+                                    rundll32, regsvr32, 'cmd /c', 'cmd.exe /c', 'http://', 'https://']
+  condition: selection and suspicious_action
+false_positives:
+  - Software updaters that register their own task from AppData (browsers, chat apps).
+triage:
+  - Export the task (schtasks /query /tn <name> /xml) and read the action and trigger.
+  - Check the account the task runs as and who created it.
+tests:
+  match:
+    - process.name: schtasks.exe
+      process.command_line: 'schtasks /create /sc minute /mo 15 /tn "OneDrive Sync" /tr "powershell -w hidden -f C:\Users\Public\s.ps1" /ru SYSTEM'
+  no_match:
+    - process.name: schtasks.exe
+      process.command_line: 'schtasks /query /fo LIST'
+    - process.name: schtasks.exe
+      process.command_line: 'schtasks /create /tn Backup /tr "C:\Program Files\Backup\run.exe" /sc daily'

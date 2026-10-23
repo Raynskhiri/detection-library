@@ -1,0 +1,5 @@
+`sysmon` EventCode=1
+| eval process_name=lower(mvindex(split(Image,"\\"),-1)), parent_name=lower(mvindex(split(ParentImage,"\\"),-1))
+| where ((((lower(process_name)="net.exe" OR lower(process_name)="net1.exe") AND (match(CommandLine, "(?i)group") AND match(CommandLine, "(?i)/domain"))) AND (match(CommandLine, "(?i)domain\\ admins") OR match(CommandLine, "(?i)enterprise\\ admins") OR match(CommandLine, "(?i)schema\\ admins") OR match(CommandLine, "(?i)domain\\ controllers") OR match(CommandLine, "(?i)administrators"))) OR (lower(process_name)="nltest.exe" AND (match(CommandLine, "(?i)/domain_trusts") OR match(CommandLine, "(?i)/dclist") OR match(CommandLine, "(?i)/all_trusts") OR match(CommandLine, "(?i)/trusted_domains") OR match(CommandLine, "(?i)/dsgetdc")))) OR (match(CommandLine, "(?i)adfind") OR match(CommandLine, "(?i)trustdmp") OR match(CommandLine, "(?i)objectcategory=computer"))
+| table _time host User ParentImage Image CommandLine
+| sort - _time

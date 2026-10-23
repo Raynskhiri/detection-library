@@ -1,0 +1,5 @@
+`sysmon` EventCode=1
+| eval process_name=lower(mvindex(split(Image,"\\"),-1)), parent_name=lower(mvindex(split(ParentImage,"\\"),-1))
+| where (lower(process_name)="svchost.exe" OR lower(process_name)="lsass.exe" OR lower(process_name)="csrss.exe" OR lower(process_name)="services.exe" OR lower(process_name)="winlogon.exe" OR lower(process_name)="smss.exe" OR lower(process_name)="wininit.exe" OR lower(process_name)="spoolsv.exe" OR lower(process_name)="taskhostw.exe" OR lower(process_name)="lsm.exe") AND NOT ((isnotnull(Image) AND match(Image, "(?i)^(\\\\\\\\\\?\\\\)?[a-z]:\\\\windows\\\\(system32|syswow64)\\\\[^\\\\]+$")))
+| table _time host User ParentImage Image CommandLine
+| sort - _time

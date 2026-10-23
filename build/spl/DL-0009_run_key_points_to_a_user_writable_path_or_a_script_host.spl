@@ -1,0 +1,5 @@
+`sysmon` EventCode=13
+| eval process_name=lower(mvindex(split(Image,"\\"),-1)), reg_key=replace(TargetObject,"\\\\[^\\\\]*$",""), reg_value=mvindex(split(TargetObject,"\\"),-1)
+| where match(reg_key, "(?i)\\\\software\\\\microsoft\\\\windows\\\\currentversion\\\\run") AND ((match(Details, "(?i)\\\\appdata\\\\") OR match(Details, "(?i)\\\\temp\\\\") OR match(Details, "(?i)\\\\users\\\\public\\\\") OR match(Details, "(?i)\\\\programdata\\\\") OR match(Details, "(?i)\\\\downloads\\\\")) OR (match(Details, "(?i)powershell") OR match(Details, "(?i)mshta") OR match(Details, "(?i)wscript") OR match(Details, "(?i)cscript") OR match(Details, "(?i)rundll32") OR match(Details, "(?i)regsvr32") OR match(Details, "(?i)cmd\\.exe\\ /c") OR match(Details, "(?i)cmd\\ /c")))
+| table _time host Image TargetObject Details
+| sort - _time

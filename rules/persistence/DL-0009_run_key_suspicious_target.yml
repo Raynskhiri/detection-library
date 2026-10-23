@@ -1,0 +1,43 @@
+id: DL-0009
+title: Run key points to a user-writable path or a script host
+description: >
+  A value is written under ...\CurrentVersion\Run or RunOnce and its data points into
+  AppData, Temp, Public or ProgramData, or launches a script host or LOLBin. This is the
+  most common way commodity malware survives a reboot.
+attack: [T1547.001]
+tactic: persistence
+severity: medium
+logsource: registry_set
+detection:
+  run_key:
+    registry.key|contains: '\software\microsoft\windows\currentversion\run'
+  writable_target:
+    registry.data|contains: ['\appdata\', '\temp\', '\users\public\', '\programdata\', '\downloads\']
+  lolbin_target:
+    registry.data|contains: [powershell, mshta, wscript, cscript, rundll32, regsvr32, 'cmd.exe /c', 'cmd /c']
+  condition: run_key and (writable_target or lolbin_target)
+false_positives:
+  - Per-user installs (Teams, Zoom, OneDrive, Discord, Spotify) live in AppData. Allowlist by signer and exact path.
+triage:
+  - Check the binary or script the value points to (signature, hash, age, prevalence across the fleet).
+  - Identify the process that wrote the value and its own origin.
+  - Remove the value only after collecting the payload.
+tests:
+  match:
+    - process.name: powershell.exe
+      registry.key: 'HKU\S-1-5-21-1\Software\Microsoft\Windows\CurrentVersion\Run'
+      registry.value: Updater
+      registry.data: 'C:\Users\amine\AppData\Roaming\svc\updater.exe'
+    - process.name: reg.exe
+      registry.key: 'HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce'
+      registry.value: x
+      registry.data: 'mshta vbscript:Execute("...")'
+  no_match:
+    - process.name: setup.exe
+      registry.key: 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run'
+      registry.value: Vendor
+      registry.data: '"C:\Program Files\Vendor\agent.exe" --tray'
+    - process.name: explorer.exe
+      registry.key: 'HKU\S-1-5-21-1\Software\Microsoft\Windows\CurrentVersion\Explorer\RecentDocs'
+      registry.value: '0'
+      registry.data: 'C:\Users\amine\AppData\x.docx'

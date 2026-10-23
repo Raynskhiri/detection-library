@@ -1,0 +1,5 @@
+`sysmon` EventCode=1
+| eval process_name=lower(mvindex(split(Image,"\\"),-1)), parent_name=lower(mvindex(split(ParentImage,"\\"),-1))
+| where ((lower(process_name)="powershell.exe" OR lower(process_name)="pwsh.exe" OR lower(process_name)="powershell_ise.exe") AND (match(CommandLine, "(?i)downloadstring") OR match(CommandLine, "(?i)downloadfile") OR match(CommandLine, "(?i)downloaddata") OR match(CommandLine, "(?i)net\\.webclient") OR match(CommandLine, "(?i)invoke\\-webrequest") OR match(CommandLine, "(?i)iwr\\ ") OR match(CommandLine, "(?i)invoke\\-restmethod") OR match(CommandLine, "(?i)irm\\ ") OR match(CommandLine, "(?i)start\\-bitstransfer"))) AND match(CommandLine, "(?i)(\\biex\\b|invoke-expression|\\|\\s*iex)")
+| table _time host User ParentImage Image CommandLine
+| sort - _time

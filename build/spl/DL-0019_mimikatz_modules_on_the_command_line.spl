@@ -1,0 +1,5 @@
+`sysmon` EventCode=1
+| eval process_name=lower(mvindex(split(Image,"\\"),-1)), parent_name=lower(mvindex(split(ParentImage,"\\"),-1))
+| where match(CommandLine, "(?i)sekurlsa::") OR match(CommandLine, "(?i)lsadump::") OR match(CommandLine, "(?i)kerberos::") OR match(CommandLine, "(?i)token::elevate") OR match(CommandLine, "(?i)dpapi::") OR match(CommandLine, "(?i)privilege::debug") OR match(CommandLine, "(?i)crypto::") OR match(CommandLine, "(?i)invoke\\-mimikatz")
+| table _time host User ParentImage Image CommandLine
+| sort - _time

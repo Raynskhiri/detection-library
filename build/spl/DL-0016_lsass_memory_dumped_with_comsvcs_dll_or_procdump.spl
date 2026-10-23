@@ -1,0 +1,5 @@
+`sysmon` EventCode=1
+| eval process_name=lower(mvindex(split(Image,"\\"),-1)), parent_name=lower(mvindex(split(ParentImage,"\\"),-1))
+| where ((lower(process_name)="rundll32.exe" AND match(CommandLine, "(?i)comsvcs")) AND match(CommandLine, "(?i)(minidump|#\\+?0*24\\b)")) OR ((lower(process_name)="procdump.exe" OR lower(process_name)="procdump64.exe" OR lower(process_name)="procdump64a.exe") AND match(CommandLine, "(?i)lsass"))
+| table _time host User ParentImage Image CommandLine
+| sort - _time

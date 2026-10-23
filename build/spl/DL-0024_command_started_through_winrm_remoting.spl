@@ -1,0 +1,5 @@
+`sysmon` EventCode=1
+| eval process_name=lower(mvindex(split(Image,"\\"),-1)), parent_name=lower(mvindex(split(ParentImage,"\\"),-1))
+| where lower(parent_name)="wsmprovhost.exe" AND (lower(process_name)="cmd.exe" OR lower(process_name)="powershell.exe" OR lower(process_name)="whoami.exe" OR lower(process_name)="net.exe" OR lower(process_name)="net1.exe" OR lower(process_name)="nltest.exe" OR lower(process_name)="rundll32.exe" OR lower(process_name)="regsvr32.exe" OR lower(process_name)="certutil.exe" OR lower(process_name)="reg.exe" OR lower(process_name)="schtasks.exe" OR lower(process_name)="sc.exe")
+| table _time host User ParentImage Image CommandLine
+| sort - _time

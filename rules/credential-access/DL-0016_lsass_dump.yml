@@ -1,0 +1,39 @@
+id: DL-0016
+title: LSASS memory dumped with comsvcs.dll or ProcDump
+description: >
+  rundll32 calling the MiniDump export of comsvcs.dll (by name or by ordinal #24), or
+  ProcDump pointed at lsass. Both write the LSASS process memory to disk so passwords,
+  hashes and Kerberos tickets can be extracted offline.
+attack: [T1003.001]
+tactic: credential-access
+severity: critical
+logsource: process_creation
+detection:
+  comsvcs:
+    process.name: rundll32.exe
+    process.command_line|contains: comsvcs
+  minidump:
+    process.command_line|re: '(minidump|#\+?0*24\b)'
+  procdump:
+    process.name: [procdump.exe, procdump64.exe, procdump64a.exe]
+    process.command_line|contains: lsass
+  condition: (comsvcs and minidump) or procdump
+false_positives:
+  - Support engineers capturing an LSASS dump for Microsoft during a case. Should be rare and announced.
+triage:
+  - Find and secure the dump file named in the command line, then delete it.
+  - Assume every credential cached on the host is stolen. Reset them, starting with privileged accounts.
+  - Hunt for logons from the accounts that were on this host to new places in the following hours.
+tests:
+  match:
+    - process.name: rundll32.exe
+      process.command_line: 'rundll32.exe C:\windows\System32\comsvcs.dll, MiniDump 624 C:\temp\l.dmp full'
+    - process.name: rundll32.exe
+      process.command_line: 'rundll32 comsvcs.dll #24 624 C:\Users\Public\x.bin full'
+    - process.name: procdump64.exe
+      process.command_line: 'procdump64.exe -accepteula -ma lsass.exe C:\temp\ls.dmp'
+  no_match:
+    - process.name: rundll32.exe
+      process.command_line: 'rundll32.exe comsvcs.dll,DllRegisterServer'
+    - process.name: procdump.exe
+      process.command_line: 'procdump -ma w3wp.exe'

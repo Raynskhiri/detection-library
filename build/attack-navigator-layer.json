@@ -1,0 +1,266 @@
+{
+  "name": "Rayen Skhiri detection library",
+  "versions": {
+    "layer": "4.5",
+    "navigator": "5.1.0",
+    "attack": "17"
+  },
+  "domain": "enterprise-attack",
+  "description": "Techniques covered by github.com/Raynskhiri/detection-library",
+  "techniques": [
+    {
+      "techniqueID": "T1003.001",
+      "score": 2,
+      "color": "",
+      "comment": "DL-0016, DL-0019"
+    },
+    {
+      "techniqueID": "T1003.002",
+      "score": 1,
+      "color": "",
+      "comment": "DL-0017"
+    },
+    {
+      "techniqueID": "T1003.003",
+      "score": 1,
+      "color": "",
+      "comment": "DL-0017"
+    },
+    {
+      "techniqueID": "T1003.004",
+      "score": 1,
+      "color": "",
+      "comment": "DL-0017"
+    },
+    {
+      "techniqueID": "T1003.006",
+      "score": 1,
+      "color": "",
+      "comment": "DL-0019"
+    },
+    {
+      "techniqueID": "T1018",
+      "score": 1,
+      "color": "",
+      "comment": "DL-0020"
+    },
+    {
+      "techniqueID": "T1021.002",
+      "score": 2,
+      "color": "",
+      "comment": "DL-0022, DL-0023"
+    },
+    {
+      "techniqueID": "T1021.006",
+      "score": 1,
+      "color": "",
+      "comment": "DL-0024"
+    },
+    {
+      "techniqueID": "T1027",
+      "score": 1,
+      "color": "",
+      "comment": "DL-0001"
+    },
+    {
+      "techniqueID": "T1036.005",
+      "score": 1,
+      "color": "",
+      "comment": "DL-0014"
+    },
+    {
+      "techniqueID": "T1047",
+      "score": 2,
+      "color": "",
+      "comment": "DL-0008, DL-0023"
+    },
+    {
+      "techniqueID": "T1048",
+      "score": 1,
+      "color": "",
+      "comment": "DL-0028"
+    },
+    {
+      "techniqueID": "T1053.005",
+      "score": 1,
+      "color": "",
+      "comment": "DL-0010"
+    },
+    {
+      "techniqueID": "T1059.001",
+      "score": 2,
+      "color": "",
+      "comment": "DL-0001, DL-0002"
+    },
+    {
+      "techniqueID": "T1059.005",
+      "score": 1,
+      "color": "",
+      "comment": "DL-0007"
+    },
+    {
+      "techniqueID": "T1059.007",
+      "score": 1,
+      "color": "",
+      "comment": "DL-0007"
+    },
+    {
+      "techniqueID": "T1069.002",
+      "score": 2,
+      "color": "",
+      "comment": "DL-0020, DL-0021"
+    },
+    {
+      "techniqueID": "T1070.001",
+      "score": 1,
+      "color": "",
+      "comment": "DL-0013"
+    },
+    {
+      "techniqueID": "T1087.002",
+      "score": 2,
+      "color": "",
+      "comment": "DL-0020, DL-0021"
+    },
+    {
+      "techniqueID": "T1090.003",
+      "score": 1,
+      "color": "",
+      "comment": "DL-0026"
+    },
+    {
+      "techniqueID": "T1102",
+      "score": 1,
+      "color": "",
+      "comment": "DL-0027"
+    },
+    {
+      "techniqueID": "T1105",
+      "score": 4,
+      "color": "",
+      "comment": "DL-0002, DL-0015, DL-0025, DL-0027"
+    },
+    {
+      "techniqueID": "T1140",
+      "score": 1,
+      "color": "",
+      "comment": "DL-0015"
+    },
+    {
+      "techniqueID": "T1204.002",
+      "score": 1,
+      "color": "",
+      "comment": "DL-0003"
+    },
+    {
+      "techniqueID": "T1218",
+      "score": 1,
+      "color": "",
+      "comment": "DL-0025"
+    },
+    {
+      "techniqueID": "T1218.005",
+      "score": 1,
+      "color": "",
+      "comment": "DL-0004"
+    },
+    {
+      "techniqueID": "T1218.010",
+      "score": 1,
+      "color": "",
+      "comment": "DL-0005"
+    },
+    {
+      "techniqueID": "T1218.011",
+      "score": 1,
+      "color": "",
+      "comment": "DL-0006"
+    },
+    {
+      "techniqueID": "T1482",
+      "score": 2,
+      "color": "",
+      "comment": "DL-0020, DL-0021"
+    },
+    {
+      "techniqueID": "T1490",
+      "score": 1,
+      "color": "",
+      "comment": "DL-0029"
+    },
+    {
+      "techniqueID": "T1543.003",
+      "score": 1,
+      "color": "",
+      "comment": "DL-0011"
+    },
+    {
+      "techniqueID": "T1547.001",
+      "score": 1,
+      "color": "",
+      "comment": "DL-0009"
+    },
+    {
+      "techniqueID": "T1550.002",
+      "score": 1,
+      "color": "",
+      "comment": "DL-0019"
+    },
+    {
+      "techniqueID": "T1558.001",
+      "score": 1,
+      "color": "",
+      "comment": "DL-0019"
+    },
+    {
+      "techniqueID": "T1558.003",
+      "score": 1,
+      "color": "",
+      "comment": "DL-0018"
+    },
+    {
+      "techniqueID": "T1558.004",
+      "score": 1,
+      "color": "",
+      "comment": "DL-0018"
+    },
+    {
+      "techniqueID": "T1562.001",
+      "score": 1,
+      "color": "",
+      "comment": "DL-0012"
+    },
+    {
+      "techniqueID": "T1566.001",
+      "score": 1,
+      "color": "",
+      "comment": "DL-0003"
+    },
+    {
+      "techniqueID": "T1567.002",
+      "score": 1,
+      "color": "",
+      "comment": "DL-0028"
+    },
+    {
+      "techniqueID": "T1569.002",
+      "score": 3,
+      "color": "",
+      "comment": "DL-0011, DL-0022, DL-0023"
+    },
+    {
+      "techniqueID": "T1572",
+      "score": 1,
+      "color": "",
+      "comment": "DL-0027"
+    }
+  ],
+  "gradient": {
+    "colors": [
+      "#ffd8b0",
+      "#f97316"
+    ],
+    "minValue": 0,
+    "maxValue": 4
+  }
+}

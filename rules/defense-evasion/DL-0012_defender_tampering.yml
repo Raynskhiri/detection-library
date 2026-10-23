@@ -1,0 +1,41 @@
+id: DL-0012
+title: Microsoft Defender disabled or given exclusions
+description: >
+  Set-MpPreference or Add-MpPreference turns off real-time, behaviour or script scanning,
+  or adds a path, process or extension exclusion. Or the WinDefend service is stopped.
+  Ransomware operators do this right before deploying the payload.
+attack: [T1562.001]
+tactic: defense-evasion
+severity: high
+logsource: process_creation
+detection:
+  powershell:
+    process.name: [powershell.exe, pwsh.exe]
+    process.command_line|contains: [set-mppreference, add-mppreference]
+  weakening:
+    process.command_line|contains: [disablerealtimemonitoring, disablebehaviormonitoring, disableioavprotection,
+                                    disablescriptscanning, disableblockatfirstseen, exclusionpath,
+                                    exclusionprocess, exclusionextension]
+  service_stop:
+    process.name: [sc.exe, net.exe, net1.exe]
+    process.command_line|contains: windefend
+  condition: (powershell and weakening) or service_stop
+false_positives:
+  - Exclusions pushed by IT for backup or database software. These should come from GPO or Intune, not an interactive shell.
+triage:
+  - Read the exact setting changed and revert it.
+  - Treat the host as compromised until proven otherwise; look at the 30 minutes before for the access path.
+  - Check whether the same command ran on other hosts (it often runs fleet-wide before encryption).
+tests:
+  match:
+    - process.name: powershell.exe
+      process.command_line: 'powershell Set-MpPreference -DisableRealtimeMonitoring $true'
+    - process.name: powershell.exe
+      process.command_line: 'powershell -c Add-MpPreference -ExclusionPath C:\ProgramData'
+    - process.name: sc.exe
+      process.command_line: 'sc stop WinDefend'
+  no_match:
+    - process.name: powershell.exe
+      process.command_line: 'powershell Get-MpPreference'
+    - process.name: powershell.exe
+      process.command_line: 'powershell Update-MpSignature'
