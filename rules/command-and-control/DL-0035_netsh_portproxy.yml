@@ -1,0 +1,31 @@
+id: DL-0035
+title: netsh port proxy set up to forward traffic
+description: >
+  netsh interface portproxy add v4tov4 makes Windows forward a local port to another host.
+  Attackers use it to reach their tool server from a segmented host, for example to serve an
+  in-memory loader over http://127.0.0.1:8080, or to pivot to an internal service.
+attack: [T1090.001]
+tactic: command-and-control
+severity: medium
+logsource: process_creation
+detection:
+  selection:
+    process.name: [netsh.exe]
+    process.command_line|contains|all: [portproxy, add]
+  condition: selection
+false_positives:
+  - Admins forwarding a port for a legacy application. These are long-lived and documented.
+triage:
+  - Run netsh interface portproxy show all on the host and check where connectaddress points.
+  - Look for downloads from 127.0.0.1 on the listen port right after (loaders, DL-0033).
+tests:
+  match:
+    - process.name: netsh.exe
+      process.command_line: 'netsh interface portproxy add v4tov4 listenport=8080 listenaddress=0.0.0.0 connectport=80 connectaddress=172.16.100.5'
+  no_match:
+    - process.name: netsh.exe
+      process.command_line: 'netsh interface portproxy show all'
+    - process.name: netsh.exe
+      process.command_line: 'netsh advfirewall firewall add rule name="App" dir=in action=allow protocol=TCP localport=443'
+references:
+  - https://attack.mitre.org/techniques/T1090/001/

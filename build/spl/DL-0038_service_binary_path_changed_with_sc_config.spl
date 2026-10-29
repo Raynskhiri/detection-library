@@ -1,0 +1,5 @@
+`sysmon` EventCode=1
+| eval process_name=lower(mvindex(split(Image,"\\"),-1)), parent_name=lower(mvindex(split(ParentImage,"\\"),-1))
+| where (lower(process_name)="sc.exe" AND (match(CommandLine, "(?i)config") AND match(CommandLine, "(?i)binpath"))) OR (match(CommandLine, "(?i)invoke\\-serviceabuse") OR match(CommandLine, "(?i)write\\-servicebinary") OR match(CommandLine, "(?i)install\\-servicebinary"))
+| table _time host User ParentImage Image CommandLine
+| sort - _time

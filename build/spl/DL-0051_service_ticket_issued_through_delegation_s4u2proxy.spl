@@ -1,0 +1,4 @@
+`wineventlog`
+| where EventCode=4769 AND match(TransmittedServices, "(?i)\\w")
+| table _time host EventCode SubjectUserName TargetUserName Message
+| sort - _time

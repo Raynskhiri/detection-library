@@ -1,0 +1,31 @@
+id: DL-0036
+title: winrs runs a command on another host
+description: >
+  winrs -r:host runs a command on a remote machine over WinRM. It is the source side of
+  DL-0024 and shows up on the attacker's foothold, often right after a Kerberos ticket was
+  injected for the target.
+attack: [T1021.006]
+tactic: lateral-movement
+severity: medium
+logsource: process_creation
+detection:
+  selection:
+    process.name: winrs.exe
+    process.command_line|re: '(-|/)r(emote)?:'
+  condition: selection
+false_positives:
+  - Admins who use winrs for remote maintenance. Baseline who and from where.
+triage:
+  - Check the target host for wsmprovhost.exe children (DL-0024) and the type 3 logon in its Security log.
+  - If the same session injected a ticket just before (DL-0031), treat the account on the target as compromised.
+tests:
+  match:
+    - process.name: winrs.exe
+      process.command_line: 'winrs -r:dcorp-mgmt cmd /c "set computername && set username"'
+    - process.name: winrs.exe
+      process.command_line: 'winrs /remote:srv01.corp.local hostname'
+  no_match:
+    - process.name: winrm.cmd
+      process.command_line: 'winrm quickconfig'
+references:
+  - https://attack.mitre.org/techniques/T1021/006/

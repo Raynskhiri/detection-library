@@ -1,0 +1,5 @@
+`sysmon` EventCode=1
+| eval process_name=lower(mvindex(split(Image,"\\"),-1)), parent_name=lower(mvindex(split(ParentImage,"\\"),-1))
+| where (match(CommandLine, "(?i)add\\-domainobjectacl") OR match(CommandLine, "(?i)set\\-domainobject") OR match(CommandLine, "(?i)add\\-domaingroupmember") OR match(CommandLine, "(?i)set\\-domainuserpassword") OR match(CommandLine, "(?i)set\\-domainobjectowner") OR match(CommandLine, "(?i)add\\-objectacl")) OR (match(CommandLine, "(?i)standin") AND match(CommandLine, "(?i)(--computer\\b.*--sid|--group\\b.*--add|--setuserrights|--grant|--spn|--setpassword)"))
+| table _time host User ParentImage Image CommandLine
+| sort - _time

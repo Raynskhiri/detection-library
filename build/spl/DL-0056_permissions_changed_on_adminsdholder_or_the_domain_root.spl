@@ -1,0 +1,4 @@
+`wineventlog`
+| where (EventCode=5136 AND lower(AttributeLDAPDisplayName)="ntsecuritydescriptor") AND match(ObjectDN, "(?i)^(cn=adminsdholder,cn=system,)?dc=[^,]+(,dc=[^,]+)*$")
+| table _time host EventCode SubjectUserName TargetUserName Message
+| sort - _time

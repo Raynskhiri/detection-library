@@ -1,0 +1,5 @@
+`sysmon` EventCode=13
+| eval process_name=lower(mvindex(split(Image,"\\"),-1)), reg_key=replace(TargetObject,"\\\\[^\\\\]*$",""), reg_value=mvindex(split(TargetObject,"\\"),-1)
+| where match(reg_key, "(?i)\\\\Environment$") AND (lower(reg_value)="cor_profiler" OR lower(reg_value)="cor_enable_profiling" OR lower(reg_value)="cor_profiler_path")
+| table _time host Image TargetObject Details
+| sort - _time

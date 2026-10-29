@@ -1,0 +1,38 @@
+id: DL-0056
+title: Permissions changed on AdminSDHolder or the domain root
+description: >
+  Event 5136 changing nTSecurityDescriptor on CN=AdminSDHolder or on the domain object
+  itself. An ACE on AdminSDHolder is copied to every protected group and admin account every
+  hour. An ACE on the domain root can grant DCSync rights. Both are persistence that survives
+  password resets.
+attack: [T1098, T1222.001]
+tactic: persistence
+severity: critical
+logsource: windows_event
+detection:
+  dacl:
+    event.id: 5136
+    attribute.name: nTSecurityDescriptor
+  sensitive_object:
+    object.dn|re: '^(cn=adminsdholder,cn=system,)?dc=[^,]+(,dc=[^,]+)*$'
+  condition: dacl and sensitive_object
+false_positives:
+  - Rare. Some identity products need rights on the domain root at install time.
+triage:
+  - Compare the ACL with a known good copy and remove principals that should not be there.
+  - On AdminSDHolder, wait for or force SDProp after the fix, then check protected accounts again.
+tests:
+  match:
+    - event.id: 5136
+      subject.user: studentx
+      object.dn: 'CN=AdminSDHolder,CN=System,DC=dollarcorp,DC=moneycorp,DC=local'
+      attribute.name: nTSecurityDescriptor
+    - event.id: 5136
+      object.dn: 'DC=dollarcorp,DC=moneycorp,DC=local'
+      attribute.name: nTSecurityDescriptor
+  no_match:
+    - event.id: 5136
+      object.dn: 'CN=Users,DC=dollarcorp,DC=moneycorp,DC=local'
+      attribute.name: nTSecurityDescriptor
+references:
+  - https://adsecurity.org/?p=1906

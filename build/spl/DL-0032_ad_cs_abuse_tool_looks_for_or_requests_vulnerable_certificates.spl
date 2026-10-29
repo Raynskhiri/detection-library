@@ -1,0 +1,5 @@
+`sysmon` EventCode=1
+| eval process_name=lower(mvindex(split(Image,"\\"),-1)), parent_name=lower(mvindex(split(ParentImage,"\\"),-1))
+| where ((match(CommandLine, "(?i)certify") AND match(CommandLine, "(?i)\\b(find|request|download|cas|pkiobjects)\\b")) OR (match(CommandLine, "(?i)certipy") AND match(CommandLine, "(?i)\\b(find|req|auth|shadow|forge|ca)\\b"))) OR (match(CommandLine, "(?i)forgecert") OR match(CommandLine, "(?i)/onbehalfof:") OR match(CommandLine, "(?i)/altname:") OR match(CommandLine, "(?i)\\-upn\\ "))
+| table _time host User ParentImage Image CommandLine
+| sort - _time

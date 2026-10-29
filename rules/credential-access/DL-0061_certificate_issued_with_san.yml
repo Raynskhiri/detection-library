@@ -1,0 +1,32 @@
+id: DL-0061
+title: Certificate issued with a subject alternative name supplied in the request
+description: >
+  CA event 4886 or 4887 where the request attributes carry a SAN (san:upn=...). If the
+  template lets the requester choose the subject (ESC1), or the CA accepts SAN attributes
+  (ESC6), any user can get a certificate for an administrator and log on with it.
+attack: [T1649]
+tactic: credential-access
+severity: high
+logsource: windows_event
+detection:
+  ca_event:
+    event.id: [4886, 4887]
+  san:
+    cert.attributes|re: 'san:.*(upn|dns)='
+  condition: ca_event and san
+false_positives:
+  - Web server or device templates where the requester supplies DNS names by design. Exclude those templates.
+triage:
+  - Compare the requester with the identity in the SAN. A normal user asking for an admin's UPN is an attack.
+  - Revoke the certificate and remove ENROLLEE_SUPPLIES_SUBJECT or the EDITF_ATTRIBUTESUBJECTALTNAME2 flag.
+tests:
+  match:
+    - event.id: 4887
+      cert.requester: 'CORP\studentx'
+      cert.attributes: 'CertificateTemplate:HTTPSCertificates san:upn=administrator@corp.local'
+  no_match:
+    - event.id: 4887
+      cert.requester: 'CORP\studentx'
+      cert.attributes: 'CertificateTemplate:User'
+references:
+  - https://posts.specterops.io/certified-pre-owned-d95910965cd2

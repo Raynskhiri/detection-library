@@ -1,0 +1,33 @@
+id: DL-0038
+title: Service binary path changed with sc config
+description: >
+  sc config <service> binPath= points an existing service at a new command. With weak
+  service permissions, any user can do this and get code running as SYSTEM on the next
+  service start. PowerUp's Invoke-ServiceAbuse does the same thing.
+attack: [T1574.011, T1543.003]
+tactic: privilege-escalation
+severity: high
+logsource: process_creation
+detection:
+  sc_config:
+    process.name: sc.exe
+    process.command_line|contains|all: [config, binpath]
+  powerup:
+    process.command_line|contains: [invoke-serviceabuse, write-servicebinary, install-servicebinary]
+  condition: sc_config or powerup
+false_positives:
+  - Software installers reconfiguring their own service. They do not point binPath at cmd.exe or net.exe.
+triage:
+  - Read the new binPath. cmd.exe, net.exe or a file in a user-writable folder means abuse.
+  - Restore the service config and fix the service ACL (sc sdshow).
+tests:
+  match:
+    - process.name: sc.exe
+      process.command_line: 'sc config AbyssWebServer binPath= "net localgroup administrators corp\user /add"'
+    - process.name: powershell.exe
+      process.command_line: 'powershell Invoke-ServiceAbuse -Name AbyssWebServer -UserName corp\user'
+  no_match:
+    - process.name: sc.exe
+      process.command_line: 'sc query AbyssWebServer'
+references:
+  - https://attack.mitre.org/techniques/T1574/011/

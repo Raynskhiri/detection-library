@@ -1,0 +1,40 @@
+id: DL-0042
+title: LSA protection or credential caching weakened in the registry
+description: >
+  Turning RunAsPPL off lets tools read LSASS memory again, and UseLogonCredential = 1 makes
+  WDigest keep cleartext passwords in memory. Both prepare a host for credential theft.
+attack: [T1562.001, T1003.001]
+tactic: defense-evasion
+severity: high
+logsource: registry_set
+detection:
+  ppl_off:
+    registry.key|endswith: \Control\Lsa
+    registry.value: [RunAsPPL, RunAsPPLBoot]
+    registry.data|contains: '0x00000000'
+  wdigest_on:
+    registry.key|endswith: \SecurityProviders\WDigest
+    registry.value: UseLogonCredential
+    registry.data|contains: '0x00000001'
+  condition: ppl_off or wdigest_on
+false_positives:
+  - Compatibility changes for old LSA plugins. These should be rare and change-managed.
+triage:
+  - Put the value back and reboot. Assume credentials on this host after the change are exposed.
+tests:
+  match:
+    - process.name: reg.exe
+      registry.key: 'HKLM\System\CurrentControlSet\Control\SecurityProviders\WDigest'
+      registry.value: UseLogonCredential
+      registry.data: 'DWORD (0x00000001)'
+    - process.name: reg.exe
+      registry.key: 'HKLM\System\CurrentControlSet\Control\Lsa'
+      registry.value: RunAsPPL
+      registry.data: 'DWORD (0x00000000)'
+  no_match:
+    - process.name: reg.exe
+      registry.key: 'HKLM\System\CurrentControlSet\Control\Lsa'
+      registry.value: RunAsPPL
+      registry.data: 'DWORD (0x00000001)'
+references:
+  - https://attack.mitre.org/techniques/T1562/001/

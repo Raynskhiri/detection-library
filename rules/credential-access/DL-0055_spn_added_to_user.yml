@@ -1,0 +1,34 @@
+id: DL-0055
+title: Service principal name added to a user account (targeted Kerberoasting)
+description: >
+  Event 5136 writing servicePrincipalName on a user object. With write rights on a user, an
+  attacker can add any SPN, request a service ticket for it and crack the user's password
+  offline, then remove the SPN again.
+attack: [T1558.003, T1098]
+tactic: credential-access
+severity: medium
+logsource: windows_event
+detection:
+  spn:
+    event.id: 5136
+    attribute.name: servicePrincipalName
+    object.class: user
+  condition: spn
+false_positives:
+  - Admins creating a service account for a new application.
+triage:
+  - Check for an RC4 service ticket for that account right after (DL-0047) and whether the SPN was removed again.
+  - Reset the account's password to a long random value.
+tests:
+  match:
+    - event.id: 5136
+      object.dn: 'CN=support1user,CN=Users,DC=corp,DC=local'
+      object.class: user
+      attribute.name: servicePrincipalName
+      attribute.value: 'dcorp/whatever1'
+  no_match:
+    - event.id: 5136
+      object.class: computer
+      attribute.name: servicePrincipalName
+references:
+  - https://attack.mitre.org/techniques/T1558/003/

@@ -29,6 +29,9 @@ class LogSource:
     fields: dict[str, Field] = field(default_factory=dict)
     xql_columns: tuple[str, ...] = ()
     spl_columns: tuple[str, ...] = ()
+    # XQL ``alter`` expressions run before the rule filter (for example to pull
+    # named values out of a Windows event's data fields).
+    xql_alters: tuple[str, ...] = ()
 
 
 def _basename(src: str, dst: str) -> str:
@@ -52,6 +55,46 @@ ACTOR_FIELDS = {
     "process.path": Field("actor_process_image_path", "Image"),
     "process.command_line": Field("actor_process_command_line", "CommandLine"),
     "user": Field("actor_effective_username", "User"),
+}
+
+# Windows event log data fields (Security, PowerShell Operational). Each portable name maps
+# to the EventData name Windows writes. Cortex XDR keeps them in action_evtlog_data_fields;
+# the Splunk Add-on for Windows (XmlWinEventLog) extracts them under the same names.
+WINEVENT_DATA = {
+    "subject.user": "SubjectUserName",
+    "target.user": "TargetUserName",
+    "service.name": "ServiceName",
+    "ticket.encryption": "TicketEncryptionType",
+    "ticket.transmitted_services": "TransmittedServices",
+    "preauth.type": "PreAuthType",
+    "object.class": "ObjectClass",
+    "object.dn": "ObjectDN",
+    "object.type": "ObjectType",
+    "object.properties": "Properties",
+    "attribute.name": "AttributeLDAPDisplayName",
+    "attribute.value": "AttributeValue",
+    "member.name": "MemberName",
+    "logon.type": "LogonType",
+    "logon.process": "LogonProcessName",
+    "auth.package": "AuthenticationPackageName",
+    "source.ip": "IpAddress",
+    "share.name": "ShareName",
+    "share.target": "RelativeTargetName",
+    "cert.requester": "Requester",
+    "cert.attributes": "Attributes",
+    "cert.subject": "Subject",
+    "sid_history": "SidHistory",
+    "script.text": "ScriptBlockText",
+}
+
+
+def _evt_alias(portable: str) -> str:
+    return "evt_" + portable.replace(".", "_")
+
+
+WINEVENT_FIELDS = {
+    "event.id": Field("action_evtlog_event_id", "EventCode", numeric=True),
+    **{k: Field(_evt_alias(k), v) for k, v in WINEVENT_DATA.items()},
 }
 
 SOURCES: dict[str, LogSource] = {
@@ -116,5 +159,19 @@ SOURCES: dict[str, LogSource] = {
                 "file.name": Field("action_file_name", "file_name")},
         xql_columns=("_time", "agent_hostname", "actor_process_image_name", "action_file_path"),
         spl_columns=("_time", "host", "Image", "TargetFilename"),
+    ),
+    "windows_event": LogSource(
+        name="windows_event",
+        description="A Windows event log record: Security (4662, 4769, 5136, 4887...) or PowerShell 4104 "
+                    "(XDR EVENT_LOG, Splunk Add-on for Windows)",
+        xql_filter="event_type = ENUM.EVENT_LOG",
+        spl_base="`wineventlog`",
+        spl_evals=(),
+        fields=WINEVENT_FIELDS,
+        xql_columns=("_time", "agent_hostname", "action_evtlog_event_id", "evt_subject_user", "evt_target_user",
+                     "action_evtlog_message"),
+        spl_columns=("_time", "host", "EventCode", "SubjectUserName", "TargetUserName", "Message"),
+        xql_alters=tuple(f'{_evt_alias(k)} = json_extract_scalar(action_evtlog_data_fields, "$.{v}")'
+                         for k, v in WINEVENT_DATA.items()),
     ),
 }

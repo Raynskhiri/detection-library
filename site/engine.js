@@ -91,6 +91,7 @@ const basename = (path) => {
 
 const XML_DATA = /<Data\s+Name=["']([^"']+)["']\s*(?:\/>|>([\s\S]*?)<\/Data>)/gi;
 const XML_EID = /<EventID[^>]*>\s*(\d+)\s*<\/EventID>/i;
+const XML_PROVIDER = /<Provider\s+Name=["']([^"']+)["']/i;
 
 function xmlUnescape(s) {
   return s.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"')
@@ -103,10 +104,37 @@ const SYSMON = {
   13: "registry_set", 22: "dns_query",
 };
 
+// Windows event log data fields (Security, PowerShell 4104): portable name -> EventData name.
+// tests/test_engine_js.py checks this table against detlib/schema.py.
+export const WINEVENT_DATA = {
+  "subject.user": "SubjectUserName", "target.user": "TargetUserName", "service.name": "ServiceName",
+  "ticket.encryption": "TicketEncryptionType", "ticket.transmitted_services": "TransmittedServices",
+  "preauth.type": "PreAuthType", "object.class": "ObjectClass", "object.dn": "ObjectDN",
+  "object.type": "ObjectType", "object.properties": "Properties", "attribute.name": "AttributeLDAPDisplayName",
+  "attribute.value": "AttributeValue", "member.name": "MemberName", "logon.type": "LogonType",
+  "logon.process": "LogonProcessName", "auth.package": "AuthenticationPackageName", "source.ip": "IpAddress",
+  "share.name": "ShareName", "share.target": "RelativeTargetName", "cert.requester": "Requester",
+  "cert.attributes": "Attributes", "cert.subject": "Subject", "sid_history": "SidHistory",
+  "script.text": "ScriptBlockText",
+};
+
+/** Map a Windows Security or PowerShell event (XML or JSON field names) to the portable model. */
+export function fromWindowsEvent(eventId, d) {
+  const ev = { "event.id": String(eventId) };
+  for (const [portable, name] of Object.entries(WINEVENT_DATA)) {
+    const v = d[name];
+    if (v !== undefined && v !== null && v !== "") ev[portable] = String(v);
+  }
+  return { logsource: "windows_event", event: ev };
+}
+
 /** Map Sysmon field names (from XML or JSON) to the portable model. */
-export function fromSysmon(eventId, d) {
+export function fromSysmon(eventId, d, provider = "") {
   const logsource = SYSMON[eventId];
-  if (!logsource) throw new Error(`Sysmon event ID ${eventId} is not covered (supported: 1, 3, 11, 13, 22)`);
+  if (!logsource || (provider && !/sysmon/i.test(provider))) {
+    if (eventId >= 1100) return fromWindowsEvent(eventId, d);
+    throw new Error(`Sysmon event ID ${eventId} is not covered (supported: 1, 3, 11, 13, 22, or a Windows Security / PowerShell event)`);
+  }
   const ev = {};
   const set = (k, v) => { if (v !== undefined && v !== null && v !== "") ev[k] = String(v); };
   set("process.path", d.Image);
@@ -141,7 +169,8 @@ export function parseSysmonXml(xml) {
   if (!m) throw new Error("No <EventID> found. Paste the full event XML (Event Viewer, Details tab, XML View).");
   const data = {};
   for (const [, name, value] of xml.matchAll(XML_DATA)) data[name] = xmlUnescape((value || "").trim());
-  return fromSysmon(Number(m[1]), data);
+  const prov = XML_PROVIDER.exec(xml);
+  return fromSysmon(Number(m[1]), data, prov ? prov[1] : "");
 }
 
 export function parseJson(text, fieldNames) {
@@ -173,7 +202,7 @@ export function parseCommandLine(line, parent) {
 export function autoParse(text, fieldNames, parent) {
   const t = text.trim();
   if (!t) return null;
-  if (t.startsWith("<")) return { kind: "Sysmon XML", ...parseSysmonXml(t) };
+  if (t.startsWith("<")) return { kind: "Event XML", ...parseSysmonXml(t) };
   if (t.startsWith("{")) return { kind: "JSON", ...parseJson(t, fieldNames) };
   return { kind: "Command line", ...parseCommandLine(t, parent) };
 }

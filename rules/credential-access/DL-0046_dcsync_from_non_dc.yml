@@ -1,0 +1,41 @@
+id: DL-0046
+title: DCSync, directory replication requested by an account that is not a DC
+description: >
+  Event 4662 on a domain controller with the replication rights GUIDs
+  (DS-Replication-Get-Changes and -All) means someone asked the DC to replicate secrets,
+  the way mimikatz lsadump::dcsync works. Domain controllers do this all the time; a user
+  account should never do it.
+attack: [T1003.006]
+tactic: credential-access
+severity: critical
+logsource: windows_event
+detection:
+  access:
+    event.id: 4662
+  replication:
+    object.properties|contains: [1131f6aa-9c07-11d1-f79f-00c04fc2dcd2, 1131f6ad-9c07-11d1-f79f-00c04fc2dcd2,
+                                 89e95b76-444d-4c62-991a-0facbeda640c]
+  dc_account:
+    subject.user|endswith: $
+  condition: access and replication and not dc_account
+false_positives:
+  - Azure AD Connect (MSOL_ accounts) and some backup or identity products replicate on purpose. Exclude them by name.
+triage:
+  - Treat as domain compromise. Find the source IP from the matching 4624 logon on the DC.
+  - "Find out which account was replicated (krbtgt, Administrator, trust accounts). If krbtgt: plan a double reset."
+  - Remove replication rights from any account that should not hold them (Get-DomainObjectAcl on the domain root).
+tests:
+  match:
+    - event.id: 4662
+      subject.user: studentx
+      object.type: '%{19195a5b-6da0-11d0-afd3-00c04fd930c9}'
+      object.properties: '%%7688 {1131f6ad-9c07-11d1-f79f-00c04fc2dcd2} {19195a5b-6da0-11d0-afd3-00c04fd930c9}'
+  no_match:
+    - event.id: 4662
+      subject.user: 'DCORP-DC$'
+      object.properties: '%%7688 {1131f6ad-9c07-11d1-f79f-00c04fc2dcd2}'
+    - event.id: 4662
+      subject.user: studentx
+      object.properties: '%%7684 {bf967a86-0de6-11d0-a285-00aa003049e2}'
+references:
+  - https://attack.mitre.org/techniques/T1003/006/

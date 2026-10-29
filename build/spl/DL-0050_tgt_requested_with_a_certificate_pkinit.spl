@@ -1,0 +1,4 @@
+`wineventlog`
+| where EventCode=4768 AND (lower(PreAuthType)="15" OR lower(PreAuthType)="16" OR lower(PreAuthType)="17")
+| table _time host EventCode SubjectUserName TargetUserName Message
+| sort - _time

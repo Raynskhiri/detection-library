@@ -1,0 +1,4 @@
+`wineventlog`
+| where (EventCode=4728 OR EventCode=4732 OR EventCode=4756) AND (lower(TargetUserName)="domain admins" OR lower(TargetUserName)="enterprise admins" OR lower(TargetUserName)="schema admins" OR lower(TargetUserName)="administrators" OR lower(TargetUserName)="account operators" OR lower(TargetUserName)="backup operators" OR lower(TargetUserName)="server operators" OR lower(TargetUserName)="dnsadmins" OR lower(TargetUserName)="group policy creator owners" OR lower(TargetUserName)="key admins" OR lower(TargetUserName)="enterprise key admins")
+| table _time host EventCode SubjectUserName TargetUserName Message
+| sort - _time

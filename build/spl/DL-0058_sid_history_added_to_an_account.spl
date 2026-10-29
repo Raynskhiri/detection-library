@@ -1,0 +1,4 @@
+`wineventlog`
+| where EventCode=4765 OR EventCode=4766
+| table _time host EventCode SubjectUserName TargetUserName Message
+| sort - _time

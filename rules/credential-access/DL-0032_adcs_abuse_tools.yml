@@ -1,0 +1,41 @@
+id: DL-0032
+title: AD CS abuse tool looks for or requests vulnerable certificates
+description: >
+  Certify, Certipy and ForgeCert used to find vulnerable certificate templates (ESC1 to ESC8),
+  request a certificate as another user, or forge one with a stolen CA key. A certificate
+  gives a login that survives password resets.
+attack: [T1649]
+tactic: credential-access
+severity: high
+logsource: process_creation
+detection:
+  certify:
+    process.command_line|contains: certify
+    process.command_line|re: '\b(find|request|download|cas|pkiobjects)\b'
+  certipy:
+    process.command_line|contains: certipy
+    process.command_line|re: '\b(find|req|auth|shadow|forge|ca)\b'
+  forge:
+    process.command_line|contains: [forgecert, '/onbehalfof:', '/altname:', '-upn ']
+  condition: certify or certipy or forge
+false_positives:
+  - PKI admins auditing templates with Certify or Certipy find. Confirm with the PKI team.
+triage:
+  - Check CA events 4886 and 4887 for certificates issued to the same requester around that time (DL-0061).
+  - Revoke any certificate issued to a privileged account that was not expected, and fix the template (enrollment rights, ENROLLEE_SUPPLIES_SUBJECT, Certificate Request Agent EKU).
+tests:
+  match:
+    - process.name: certify.exe
+      process.command_line: 'Certify.exe find /vulnerable'
+    - process.name: loader.exe
+      process.command_line: 'Loader.exe -path .\Certify.exe -args request /ca:dc01.corp.local\corp-DC01-CA /template:Users /onbehalfof:corp\administrator /enrollcert:agent.pfx'
+    - process.name: python.exe
+      process.command_line: 'certipy req -u user@corp.local -ca corp-CA -template ESC1 -upn administrator@corp.local'
+  no_match:
+    - process.name: certutil.exe
+      process.command_line: 'certutil -viewstore my'
+    - process.name: certreq.exe
+      process.command_line: 'certreq -submit request.req'
+references:
+  - https://github.com/GhostPack/Certify
+  - https://posts.specterops.io/certified-pre-owned-d95910965cd2

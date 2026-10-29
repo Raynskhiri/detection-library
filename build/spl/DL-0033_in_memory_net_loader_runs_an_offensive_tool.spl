@@ -1,0 +1,5 @@
+`sysmon` EventCode=1
+| eval process_name=lower(mvindex(split(Image,"\\"),-1)), parent_name=lower(mvindex(split(ParentImage,"\\"),-1))
+| where ((match(CommandLine, "(?i)\\-path") AND match(CommandLine, "(?i)\\-args")) AND match(CommandLine, "(?i)(https?://|\\\\\\\\|rubeus|safetykatz|certify|sharphound|seatbelt|standin|sharpup|winpeas)")) OR (match(CommandLine, "(?i)netloader") OR match(CommandLine, "(?i)loader\\.exe\\ \\-path"))
+| table _time host User ParentImage Image CommandLine
+| sort - _time

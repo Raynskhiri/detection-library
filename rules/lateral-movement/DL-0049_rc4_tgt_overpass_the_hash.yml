@@ -1,0 +1,36 @@
+id: DL-0049
+title: TGT requested with RC4 encryption (possible overpass-the-hash)
+description: >
+  Event 4768 with encryption 0x17. Modern Windows clients ask for AES. A TGT requested with
+  RC4 is what you see when an NTLM hash is turned into a Kerberos ticket (Rubeus asktgt /rc4,
+  mimikatz sekurlsa::pth).
+attack: [T1550.002]
+tactic: lateral-movement
+severity: medium
+logsource: windows_event
+detection:
+  as_req:
+    event.id: 4768
+    ticket.encryption: '0x17'
+  no_preauth:
+    preauth.type: '0'
+  condition: as_req and not no_preauth
+false_positives:
+  - Accounts and devices that only support RC4. They are the same every day, so baseline them.
+triage:
+  - Check where the hash came from. The source host in the event is the attacker's foothold.
+  - Disable RC4 in the domain where possible, so this becomes a high-fidelity signal.
+tests:
+  match:
+    - event.id: 4768
+      target.user: techadmin
+      ticket.encryption: '0x17'
+      preauth.type: '2'
+      source.ip: '::ffff:172.16.100.1'
+  no_match:
+    - event.id: 4768
+      target.user: techadmin
+      ticket.encryption: '0x12'
+      preauth.type: '2'
+references:
+  - https://attack.mitre.org/techniques/T1550/002/

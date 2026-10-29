@@ -28,6 +28,19 @@ const SAMPLES = [
   "TargetObject": "HKU\\\\S-1-5-21-1\\\\Software\\\\Microsoft\\\\Windows\\\\CurrentVersion\\\\Run\\\\Updater",
   "Details": "C:\\\\Users\\\\amine\\\\AppData\\\\Roaming\\\\svc\\\\updater.exe"
 }` },
+  { label: "Rubeus S4U", text: "Rubeus.exe s4u /user:studvm$ /aes256:8fc5cb090b0c821ac48e539863703bf121b762f9b15a85ab8441be82634c590e /msdsspn:http/mgmtsrv /impersonateuser:techadmin /ptt" },
+  { label: "DCSync (4662 XML)", text: `<Event xmlns="http://schemas.microsoft.com/win/2004/08/events/event">
+  <System><Provider Name="Microsoft-Windows-Security-Auditing"/><EventID>4662</EventID><Computer>DC01</Computer></System>
+  <EventData>
+    <Data Name="SubjectUserName">s.benali</Data>
+    <Data Name="ObjectType">%{19195a5b-6da0-11d0-afd3-00c04fd930c9}</Data>
+    <Data Name="Properties">%%7688 {1131f6ad-9c07-11d1-f79f-00c04fc2dcd2} {19195a5b-6da0-11d0-afd3-00c04fd930c9}</Data>
+  </EventData>
+</Event>` },
+  { label: "AMSI bypass (4104)", text: `{
+  "EventID": 4104,
+  "ScriptBlockText": "[Ref].Assembly.GetType('System.Management.Automation.AmsiUtils').GetField('amsiInitFailed','NonPublic,Static').SetValue($null,$true)"
+}` },
   { label: "Normal admin work", benign: true, text: "powershell.exe Get-Service -Name Spooler | Restart-Service" },
 ];
 
@@ -107,7 +120,7 @@ function render() {
   if (!parsed) {
     kind.textContent = "Waiting for input";
     kind.className = "chip";
-    hits.innerHTML = `<div class="empty"><b>Nothing to check yet.</b>Type a command line, paste a Sysmon event, or pick an example on the left.</div>`;
+    hits.innerHTML = `<div class="empty"><b>Nothing to check yet.</b>Type a command line, paste a Sysmon or Windows event, or pick an example on the left.</div>`;
     $("count").textContent = "";
     $("parsed").innerHTML = "";
     return;

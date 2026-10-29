@@ -1,0 +1,35 @@
+id: DL-0045
+title: Security descriptor backdoor on WMI, PS Remoting, remote registry or AdminSDHolder
+description: >
+  Nishang and DAMP functions that quietly give an account remote access by editing security
+  descriptors: Set-RemoteWMI, Set-RemotePSRemoting, Add-RemoteRegBackdoor, plus
+  AdminSDHolder and DCSync rights added with PowerView. These are classic domain persistence
+  techniques because nothing new is created, only permissions change.
+attack: [T1098, T1546.003, T1112]
+tactic: persistence
+severity: critical
+logsource: windows_event
+detection:
+  script_block:
+    event.id: 4104
+  backdoor:
+    script.text|contains: [set-remotewmi, set-remotepsremoting, add-remoteregbackdoor, get-remotemachineaccounthash,
+                           get-remotelocalaccounthash, get-remotecachedcredential, 'cn=adminsdholder',
+                           '-rights dcsync', invoke-sdpropagator]
+  condition: script_block and backdoor
+false_positives:
+  - Very rare outside red team work.
+triage:
+  - On the target host, review the security descriptors of root\cimv2, the PSRemoting session configuration, and the winreg key.
+  - Compare the AdminSDHolder ACL with a known good copy and remove unknown principals.
+tests:
+  match:
+    - event.id: 4104
+      script.text: 'Set-RemoteWMI -SamAccountName student1 -ComputerName dcorp-dc -namespace "root\cimv2" -Verbose'
+    - event.id: 4104
+      script.text: 'Add-DomainObjectAcl -TargetIdentity "CN=AdminSDHolder,CN=System,dc=corp,dc=local" -PrincipalIdentity student1 -Rights All'
+  no_match:
+    - event.id: 4104
+      script.text: 'Get-WmiObject -Class Win32_OperatingSystem'
+references:
+  - https://github.com/HarmJ0y/DAMP

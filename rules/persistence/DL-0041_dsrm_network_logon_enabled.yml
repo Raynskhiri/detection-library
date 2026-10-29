@@ -1,0 +1,33 @@
+id: DL-0041
+title: DSRM administrator allowed to log on normally (DsrmAdminLogonBehavior)
+description: >
+  Setting DsrmAdminLogonBehavior to 2 lets the Directory Services Restore Mode
+  administrator, a local account on every DC whose password rarely changes, log on over
+  the network. An attacker who dumped that hash keeps a backdoor into the DC.
+attack: [T1098, T1112]
+tactic: persistence
+severity: critical
+logsource: registry_set
+detection:
+  dsrm:
+    registry.key|endswith: \Control\Lsa
+    registry.value: DsrmAdminLogonBehavior
+  condition: dsrm
+false_positives:
+  - Almost never set on purpose. A documented recovery procedure is the only reason.
+triage:
+  - Set the value back to 0 or delete it, then reset the DSRM password on that DC (ntdsutil "set dsrm password").
+  - Look for network logons by the DC's local Administrator account after the change.
+tests:
+  match:
+    - process.name: powershell.exe
+      registry.key: 'HKLM\System\CurrentControlSet\Control\Lsa'
+      registry.value: DsrmAdminLogonBehavior
+      registry.data: 'DWORD (0x00000002)'
+  no_match:
+    - process.name: lsass.exe
+      registry.key: 'HKLM\System\CurrentControlSet\Control\Lsa'
+      registry.value: LmCompatibilityLevel
+      registry.data: 'DWORD (0x00000005)'
+references:
+  - https://adsecurity.org/?p=1785

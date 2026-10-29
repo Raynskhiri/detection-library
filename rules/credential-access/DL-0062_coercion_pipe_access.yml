@@ -1,0 +1,34 @@
+id: DL-0062
+title: Remote access to the print spooler or EFS pipe (authentication coercion)
+description: >
+  Event 5145 for IPC$ with the spoolss or efsrpc pipe. Printer bug (MS-RPRN) and PetitPotam
+  (MS-EFSR) and DFSCoerce (MS-DFSNM) force a server, often a DC, to authenticate to an attacker-chosen host. With
+  unconstrained delegation on that host, the attacker captures the DC's TGT.
+attack: [T1187]
+tactic: credential-access
+severity: medium
+logsource: windows_event
+detection:
+  pipe:
+    event.id: 5145
+    share.name|endswith: IPC$
+    share.target: [spoolss, efsrpc, netdfs]
+  condition: pipe
+false_positives:
+  - Print servers receiving normal spooler traffic. Turn off the spooler on DCs and this becomes quiet there.
+triage:
+  - Check the source IP. A workstation calling the spooler on a DC is suspicious.
+  - Look for a TGT for the DC computer account appearing on another host (Rubeus monitor, DL-0031).
+tests:
+  match:
+    - event.id: 5145
+      subject.user: studentx
+      share.name: '\\*\IPC$'
+      share.target: spoolss
+      source.ip: 172.16.100.1
+  no_match:
+    - event.id: 5145
+      share.name: '\\*\SYSVOL'
+      share.target: 'corp.local\Policies'
+references:
+  - https://attack.mitre.org/techniques/T1187/

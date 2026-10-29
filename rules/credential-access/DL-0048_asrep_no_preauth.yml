@@ -1,0 +1,31 @@
+id: DL-0048
+title: TGT issued without Kerberos pre-authentication (AS-REP roasting)
+description: >
+  Event 4768 with pre-authentication type 0 means the account has "Do not require Kerberos
+  preauthentication" set, and anyone can request a TGT for it and crack the reply offline.
+attack: [T1558.004]
+tactic: credential-access
+severity: high
+logsource: windows_event
+detection:
+  as_req:
+    event.id: 4768
+    preauth.type: '0'
+  condition: as_req
+false_positives:
+  - Accounts that really need no pre-auth (rare, some old Unix integrations). List them and review why.
+triage:
+  - Turn pre-authentication back on for the account and reset its password.
+  - Check who else has DONT_REQ_PREAUTH (Get-DomainUser -PreauthNotRequired) and who can set it.
+tests:
+  match:
+    - event.id: 4768
+      target.user: VPN1user
+      preauth.type: '0'
+      ticket.encryption: '0x17'
+  no_match:
+    - event.id: 4768
+      target.user: s.benali
+      preauth.type: '2'
+references:
+  - https://attack.mitre.org/techniques/T1558/004/

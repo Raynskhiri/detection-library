@@ -1,0 +1,4 @@
+`wineventlog`
+| where EventCode=5145 AND match(ShareName, "(?i)IPC\\$$") AND (lower(RelativeTargetName)="spoolss" OR lower(RelativeTargetName)="efsrpc" OR lower(RelativeTargetName)="netdfs")
+| table _time host EventCode SubjectUserName TargetUserName Message
+| sort - _time

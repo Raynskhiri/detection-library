@@ -1,0 +1,4 @@
+`wineventlog`
+| where EventCode=4104 AND (match(ScriptBlockText, "(?i)find\\-interestingdomainacl") OR match(ScriptBlockText, "(?i)invoke\\-sharefinder") OR match(ScriptBlockText, "(?i)get\\-domainobjectacl") OR match(ScriptBlockText, "(?i)invoke\\-userhunter") OR match(ScriptBlockText, "(?i)find\\-localadminaccess") OR match(ScriptBlockText, "(?i)invoke\\-allchecks") OR match(ScriptBlockText, "(?i)invoke\\-serviceabuse") OR match(ScriptBlockText, "(?i)invoke\\-mimikatz") OR match(ScriptBlockText, "(?i)invoke\\-kerberoast") OR match(ScriptBlockText, "(?i)get\\-sqlserverlinkcrawl") OR match(ScriptBlockText, "(?i)get\\-sqlinstancedomain") OR match(ScriptBlockText, "(?i)find\\-psremotinglocaladminaccess") OR match(ScriptBlockText, "(?i)invoke\\-portscan") OR match(ScriptBlockText, "(?i)function\\ get\\-domainuser"))
+| table _time host EventCode SubjectUserName TargetUserName Message
+| sort - _time

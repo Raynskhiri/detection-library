@@ -1,0 +1,31 @@
+id: DL-0050
+title: TGT requested with a certificate (PKINIT)
+description: >
+  Event 4768 with pre-authentication type 16 or 17 means the account logged on with a
+  certificate. In a domain without smart cards this is rare, and it is how a certificate
+  obtained through AD CS abuse or shadow credentials is turned into a login.
+attack: [T1649, T1550]
+tactic: credential-access
+severity: medium
+logsource: windows_event
+detection:
+  pkinit:
+    event.id: 4768
+    preauth.type: ['15', '16', '17']
+  condition: pkinit
+false_positives:
+  - Smart card and Windows Hello for Business logons. Exclude the accounts and devices that use them.
+triage:
+  - Find the certificate (serial and issuer are in the event) and when it was issued on the CA (4886/4887).
+  - If the account is privileged and does not use smart cards, revoke the certificate and check the template it came from.
+tests:
+  match:
+    - event.id: 4768
+      target.user: techadmin
+      preauth.type: '16'
+  no_match:
+    - event.id: 4768
+      target.user: techadmin
+      preauth.type: '2'
+references:
+  - https://attack.mitre.org/techniques/T1649/

@@ -4,9 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Detection Playground · Rayen Skhiri</title>
-<meta name="description" content="Throw an attack at 29 detections. Type a command line or paste a Sysmon event and see which rules fire, with ATT&CK mapping, triage steps and ready-to-paste Cortex XQL and Splunk SPL. Runs entirely in your browser.">
+<meta name="description" content="Throw an attack at 62 detections. Type a command line or paste a Sysmon, Security or PowerShell event and see which rules fire, with ATT&CK mapping, triage steps and ready-to-paste Cortex XQL and Splunk SPL. Runs entirely in your browser.">
 <meta property="og:title" content="Detection Playground">
-<meta property="og:description" content="Type a command line or paste a Sysmon event. See which of 29 detections fire, with Cortex XQL and Splunk SPL.">
+<meta property="og:description" content="Type a command line or paste a Sysmon or Windows event. See which of 62 detections fire, with Cortex XQL and Splunk SPL.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://detections.rayenskhiri.online/">
 <meta property="og:image" content="https://detections.rayenskhiri.online/og.png">
@@ -40,9 +40,9 @@
 <main>
   <section class="hero">
     <div class="wrap">
-      <p class="eyebrow">// <span id="n-rules">29</span> detections · Cortex XQL · Splunk SPL · MITRE ATT&amp;CK</p>
+      <p class="eyebrow">// <span id="n-rules">62</span> detections · Cortex XQL · Splunk SPL · MITRE ATT&amp;CK</p>
       <h1>Throw an attack at <span class="hl">my detections.</span></h1>
-      <p class="lead">Type a command line or paste a Sysmon event. Every rule runs right here in your browser,
+      <p class="lead">Type a command line or paste a Sysmon, Security or PowerShell event. Every rule runs right here in your browser,
         the same rules CI tests on every commit. Nothing you paste leaves this page.</p>
     </div>
   </section>
@@ -57,7 +57,7 @@
         <label class="vh" for="raw">Command line, Sysmon XML or JSON</label>
         <textarea id="raw" spellcheck="false" autocomplete="off" placeholder="rundll32.exe C:\Windows\System32\comsvcs.dll, MiniDump 624 C:\temp\l.dmp full
 
-or paste a Sysmon event (Event Viewer, Details, XML View), or JSON"></textarea>
+or paste a Sysmon or Windows event (Event Viewer, Details, XML View), or JSON"></textarea>
         <div class="row">
           <label for="parent">Parent process <span class="opt">(optional, command lines only)</span></label>
           <input id="parent" type="text" placeholder="winword.exe" spellcheck="false" autocomplete="off">

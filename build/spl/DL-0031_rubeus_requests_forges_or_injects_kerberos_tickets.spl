@@ -1,0 +1,5 @@
+`sysmon` EventCode=1
+| eval process_name=lower(mvindex(split(Image,"\\"),-1)), parent_name=lower(mvindex(split(ParentImage,"\\"),-1))
+| where match(CommandLine, "(?i)\\b(asktgt|asktgs|s4u|ptt|tgtdeleg|golden|silver|diamond|monitor|harvest|dump|triage|createnetonly|renew)\\b") AND ((match(CommandLine, "(?i)/rc4:") OR match(CommandLine, "(?i)/aes256:") OR match(CommandLine, "(?i)/aes128:") OR match(CommandLine, "(?i)/ticket:") OR match(CommandLine, "(?i)/impersonateuser:") OR match(CommandLine, "(?i)/msdsspn:") OR match(CommandLine, "(?i)/certificate:") OR match(CommandLine, "(?i)/krbkey:") OR match(CommandLine, "(?i)/ptt") OR match(CommandLine, "(?i)/nowrap") OR match(CommandLine, "(?i)/interval:")) OR match(CommandLine, "(?i)rubeus"))
+| table _time host User ParentImage Image CommandLine
+| sort - _time

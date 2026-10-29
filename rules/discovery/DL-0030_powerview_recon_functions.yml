@@ -1,0 +1,37 @@
+id: DL-0030
+title: PowerView or PowerSploit AD recon functions on the command line
+description: >
+  PowerView and PowerSploit functions that map users, groups, ACLs, sessions, shares,
+  local admin access and trusts (Get-DomainUser, Find-InterestingDomainAcl,
+  Invoke-ShareFinder, Find-LocalAdminAccess, Get-DomainTrust...). In an AD intrusion this
+  is the step that finds the path to Domain Admin.
+attack: [T1087.002, T1069.002, T1482, T1135]
+tactic: discovery
+severity: high
+logsource: process_creation
+detection:
+  functions:
+    process.command_line|contains: [get-domainuser, get-domaingroupmember, get-domaincomputer, get-domainobjectacl,
+                                    find-interestingdomainacl, invoke-sharefinder, find-localadminaccess,
+                                    find-domainuserlocation, invoke-userhunter, get-domaintrust, get-forestdomain,
+                                    get-domaingpo, get-netsession, get-netloggedon, find-psremotinglocaladminaccess,
+                                    find-wmilocaladminaccess, get-domainforeigngroupmember]
+  condition: functions
+false_positives:
+  - Authorised penetration tests. Some AD audit scripts reuse PowerView function names.
+triage:
+  - Find out how PowerView got there. It is usually loaded in memory, so check PowerShell 4104 script blocks (DL-0044) on the same host.
+  - Look at what came next from the same account: ACL changes (DL-0034, 5136 events), new logons on servers, Kerberos ticket requests.
+tests:
+  match:
+    - process.name: powershell.exe
+      process.command_line: 'powershell -c ". .\PowerView.ps1; Find-InterestingDomainAcl -ResolveGUIDs"'
+    - process.name: powershell.exe
+      process.command_line: 'powershell Invoke-ShareFinder -CheckShareAccess -Verbose'
+  no_match:
+    - process.name: powershell.exe
+      process.command_line: 'powershell Get-ADUser -Identity s.benali'
+    - process.name: net.exe
+      process.command_line: 'net use Z: \\fs01\share'
+references:
+  - https://github.com/PowerShellMafia/PowerSploit/tree/master/Recon

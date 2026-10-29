@@ -1,0 +1,7 @@
+config case_sensitive = false
+| dataset = xdr_data
+| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+| filter action_process_image_command_line contains "get-domainuser" or action_process_image_command_line contains "get-domaingroupmember" or action_process_image_command_line contains "get-domaincomputer" or action_process_image_command_line contains "get-domainobjectacl" or action_process_image_command_line contains "find-interestingdomainacl" or action_process_image_command_line contains "invoke-sharefinder" or action_process_image_command_line contains "find-localadminaccess" or action_process_image_command_line contains "find-domainuserlocation" or action_process_image_command_line contains "invoke-userhunter" or action_process_image_command_line contains "get-domaintrust" or action_process_image_command_line contains "get-forestdomain" or action_process_image_command_line contains "get-domaingpo" or action_process_image_command_line contains "get-netsession" or action_process_image_command_line contains "get-netloggedon" or action_process_image_command_line contains "find-psremotinglocaladminaccess" or action_process_image_command_line contains "find-wmilocaladminaccess" or action_process_image_command_line contains "get-domainforeigngroupmember"
+| fields _time, agent_hostname, actor_effective_username, actor_process_image_name, action_process_image_name, action_process_image_command_line
+| sort desc _time
+| limit 1000

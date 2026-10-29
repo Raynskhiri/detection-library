@@ -1,0 +1,32 @@
+id: DL-0053
+title: Constrained delegation configured on an account
+description: >
+  Event 5136 changing msDS-AllowedToDelegateTo. The account can then get tickets as any user
+  for the listed services, and the service name in the ticket can be swapped for another
+  service on the same host (for example TIME to LDAP or CIFS).
+attack: [T1098, T1134.001]
+tactic: privilege-escalation
+severity: medium
+logsource: windows_event
+detection:
+  kcd:
+    event.id: 5136
+    attribute.name: msDS-AllowedToDelegateTo
+  condition: kcd
+false_positives:
+  - Planned delegation for web or SQL front ends. Review with the application owner.
+triage:
+  - Check the services listed. Delegation to a domain controller (LDAP, CIFS, HOST, TIME) is as good as Domain Admin.
+  - Prefer resource-based delegation scoped to the exact service, and mark admins as not delegatable.
+tests:
+  match:
+    - event.id: 5136
+      object.dn: 'CN=adminsrv,CN=Computers,DC=corp,DC=local'
+      attribute.name: msDS-AllowedToDelegateTo
+      attribute.value: 'TIME/dcorp-dc.dollarcorp.moneycorp.LOCAL'
+  no_match:
+    - event.id: 5136
+      attribute.name: servicePrincipalName
+      object.class: computer
+references:
+  - https://attack.mitre.org/techniques/T1134/001/

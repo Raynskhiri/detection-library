@@ -1,0 +1,30 @@
+id: DL-0058
+title: SID history added to an account
+description: >
+  Events 4765 and 4766 are written when SID history is added to an account, or the attempt
+  fails. A SID from a privileged group in SID history gives those rights everywhere the SID
+  is accepted, including across trusts without SID filtering. Outside a domain migration
+  this should never happen.
+attack: [T1134.005]
+tactic: privilege-escalation
+severity: critical
+logsource: windows_event
+detection:
+  sid_history:
+    event.id: [4765, 4766]
+  condition: sid_history
+false_positives:
+  - Domain migrations with ADMT. Those are planned and run from the migration account.
+triage:
+  - Read the SID added. -519 (Enterprise Admins) or -512 (Domain Admins) from another domain means a trust attack.
+  - Clear SID history on the account and make sure SID filtering is on for external and forest trusts.
+tests:
+  match:
+    - event.id: 4765
+      target.user: studentx
+      sid_history: 'S-1-5-21-335606122-960912869-3279953914-519'
+  no_match:
+    - event.id: 4738
+      target.user: studentx
+references:
+  - https://attack.mitre.org/techniques/T1134/005/

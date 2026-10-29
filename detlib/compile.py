@@ -73,12 +73,20 @@ def to_xql(rule: Rule) -> str:
         "config case_sensitive = false",
         "| dataset = xdr_data",
         f"| filter {src.xql_filter}",
+        *([f"| alter {', '.join(_used_alters(rule, src))}"] if src.xql_alters else []),
         f"| filter {expr}",
         f"| fields {', '.join(src.xql_columns)}",
         "| sort desc _time",
         "| limit 1000",
     ]
     return "\n".join(lines) + "\n"
+
+
+def _used_alters(rule: Rule, src) -> list[str]:
+    """Only the alter expressions for fields the rule filters on (plus the shown columns)."""
+    used = {p.field for preds in rule.selections.values() for p in preds}
+    wanted = {src.fields[f].xql for f in used} | set(src.xql_columns)
+    return [a for a in src.xql_alters if a.split(" = ", 1)[0] in wanted]
 
 
 # ---------------------------------------------------------------- SPL

@@ -1,0 +1,36 @@
+id: DL-0044
+title: Offensive PowerShell toolkit loaded (PowerView, PowerUp, Invoke-Mimikatz)
+description: >
+  Script block logging (4104) shows the functions of well-known offensive toolkits when
+  they are loaded in memory: PowerView, PowerUp, Invoke-Mimikatz, Invoke-Kerberoast,
+  PowerUpSQL, Find-PSRemotingLocalAdminAccess. The command line often shows only IEX or a
+  download cradle.
+attack: [T1059.001, T1087.002, T1003.001]
+tactic: execution
+severity: high
+logsource: windows_event
+detection:
+  script_block:
+    event.id: 4104
+  toolkit:
+    script.text|contains: [find-interestingdomainacl, invoke-sharefinder, get-domainobjectacl, invoke-userhunter,
+                           find-localadminaccess, invoke-allchecks, invoke-serviceabuse, invoke-mimikatz,
+                           invoke-kerberoast, get-sqlserverlinkcrawl, get-sqlinstancedomain,
+                           find-psremotinglocaladminaccess, invoke-portscan, 'function get-domainuser']
+  condition: script_block and toolkit
+false_positives:
+  - Authorised tests. A few AD audit scripts reuse PowerView code.
+triage:
+  - Rebuild the full script from consecutive 4104 events (same ScriptBlock ID) to see every function that ran.
+  - Look for the AMSI bypass just before it (DL-0043) and the account that ran it.
+tests:
+  match:
+    - event.id: 4104
+      script.text: 'function Find-InterestingDomainAcl { [CmdletBinding()] Param(...) }'
+    - event.id: 4104
+      script.text: 'Get-SQLServerLinkCrawl -Instance dcorp-mssql -Query "exec master..xp_cmdshell ''whoami''"'
+  no_match:
+    - event.id: 4104
+      script.text: 'Get-ADUser -Filter * -Properties LastLogonDate'
+references:
+  - https://attack.mitre.org/techniques/T1059/001/

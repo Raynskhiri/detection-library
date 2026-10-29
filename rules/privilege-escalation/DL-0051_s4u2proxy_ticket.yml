@@ -1,0 +1,34 @@
+id: DL-0051
+title: Service ticket issued through delegation (S4U2Proxy)
+description: >
+  Event 4769 with a value in Transmitted Services means a service asked for a ticket on
+  behalf of a user (constrained or resource-based delegation). Attackers who control a
+  computer account with delegation rights use it to impersonate administrators to another
+  host. Useful as a hunt; legitimate delegation creates the same event.
+attack: [T1558, T1134.001]
+tactic: privilege-escalation
+severity: low
+logsource: windows_event
+detection:
+  delegated:
+    event.id: 4769
+    ticket.transmitted_services|re: '\w'
+  condition: delegated
+false_positives:
+  - Web and SQL front ends that use constrained delegation. Baseline which services delegate to which.
+triage:
+  - Check the impersonated account. A domain admin being delegated to a server that never needed it is the red flag.
+  - Review msDS-AllowedToActOnBehalfOfOtherIdentity on the target service's computer (DL-0052).
+tests:
+  match:
+    - event.id: 4769
+      target.user: 'STUDVM$@TECH.CORP'
+      service.name: 'MGMTSRV$'
+      ticket.transmitted_services: 'studvm$@TECH.CORP'
+  no_match:
+    - event.id: 4769
+      target.user: 's.benali@TECH.CORP'
+      service.name: 'FS01$'
+      ticket.transmitted_services: '-'
+references:
+  - https://attack.mitre.org/techniques/T1134/001/

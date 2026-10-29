@@ -1,0 +1,4 @@
+`wineventlog`
+| where (EventCode=4768 AND lower(TicketEncryptionType)="0x17") AND NOT ((isnotnull(PreAuthType) AND lower(PreAuthType)="0"))
+| table _time host EventCode SubjectUserName TargetUserName Message
+| sort - _time

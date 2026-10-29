@@ -1,0 +1,39 @@
+id: DL-0047
+title: Kerberos service ticket with RC4 for a user service account (Kerberoasting)
+description: >
+  Event 4769 with ticket encryption 0x17 (RC4) for a service that is not a computer account
+  and not krbtgt. In a domain that uses AES, RC4 service tickets for user accounts with an
+  SPN are what Kerberoasting tools request, because RC4 is the fastest to crack offline.
+attack: [T1558.003]
+tactic: credential-access
+severity: medium
+logsource: windows_event
+detection:
+  tgs:
+    event.id: 4769
+    ticket.encryption: '0x17'
+  machine_or_krbtgt:
+    service.name|endswith: $
+  krbtgt:
+    service.name|startswith: krbtgt
+  condition: tgs and not machine_or_krbtgt and not krbtgt
+false_positives:
+  - Old applications and service accounts still limited to RC4. Fix them (msDS-SupportedEncryptionTypes) and the rule gets quiet.
+triage:
+  - Many 4769 RC4 requests from one account in a short time is Kerberoasting. A single one may be an old client.
+  - Give the targeted service accounts long random passwords or move them to gMSA.
+tests:
+  match:
+    - event.id: 4769
+      target.user: 'studentx@CORP.LOCAL'
+      service.name: svcadmin
+      ticket.encryption: '0x17'
+  no_match:
+    - event.id: 4769
+      service.name: 'DCORP-MGMT$'
+      ticket.encryption: '0x17'
+    - event.id: 4769
+      service.name: svcadmin
+      ticket.encryption: '0x12'
+references:
+  - https://attack.mitre.org/techniques/T1558/003/

@@ -1,0 +1,4 @@
+`wineventlog`
+| where EventCode=4104 AND (match(ScriptBlockText, "(?i)set\\-remotewmi") OR match(ScriptBlockText, "(?i)set\\-remotepsremoting") OR match(ScriptBlockText, "(?i)add\\-remoteregbackdoor") OR match(ScriptBlockText, "(?i)get\\-remotemachineaccounthash") OR match(ScriptBlockText, "(?i)get\\-remotelocalaccounthash") OR match(ScriptBlockText, "(?i)get\\-remotecachedcredential") OR match(ScriptBlockText, "(?i)cn=adminsdholder") OR match(ScriptBlockText, "(?i)\\-rights\\ dcsync") OR match(ScriptBlockText, "(?i)invoke\\-sdpropagator"))
+| table _time host EventCode SubjectUserName TargetUserName Message
+| sort - _time

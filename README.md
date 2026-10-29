@@ -2,7 +2,8 @@
 
 <p align="center">
   <b>Write a detection once. Get Cortex XDR XQL and Splunk SPL. Prove it with test events.</b><br>
-  29 hunts for the things that actually show up in Windows intrusions, from the first macro to deleted shadow copies.<br>
+  62 hunts for the things that actually show up in Windows intrusions, from the first macro to deleted shadow copies,<br>
+  including full Active Directory attack coverage: Kerberos, delegation, ACL abuse, AD CS, DCSync, trusts and AMSI bypasses.<br>
   <b>Try them live: <a href="https://detections.rayenskhiri.online">detections.rayenskhiri.online</a></b>
 </p>
 
@@ -10,7 +11,7 @@
   <a href="https://github.com/Raynskhiri/detection-library/actions/workflows/tests.yml"><img src="https://github.com/Raynskhiri/detection-library/actions/workflows/tests.yml/badge.svg" alt="Tests"></a>
   <a href="https://github.com/Raynskhiri/detection-library/actions/workflows/security.yml"><img src="https://github.com/Raynskhiri/detection-library/actions/workflows/security.yml/badge.svg" alt="Security"></a>
   <a href="https://github.com/Raynskhiri/detection-library/releases/tag/latest"><img src="https://img.shields.io/badge/download-query%20packs-FF6B1A" alt="Query packs"></a>
-  <img src="https://img.shields.io/badge/rules-29-F97316" alt="29 rules">
+  <img src="https://img.shields.io/badge/rules-62-F97316" alt="62 rules">
   <img src="https://img.shields.io/badge/output-Cortex%20XQL%20%7C%20Splunk%20SPL-FA582D" alt="XQL and SPL">
   <img src="https://img.shields.io/badge/mapped%20to-MITRE%20ATT%26CK-C8102E" alt="MITRE ATT&CK">
   <img src="https://img.shields.io/badge/python-3.10%2B-3776AB?logo=python&logoColor=white" alt="Python 3.10+">
@@ -25,7 +26,7 @@ Most query collections are a folder of strings. Nobody knows if they still work,
 miss, or what to do when one fires. Every rule here comes with four things:
 
 1. **One source of truth.** A short YAML rule with portable field names.
-2. **Two native outputs.** Ready-to-paste XQL for Cortex XDR (`xdr_data`) and SPL for Splunk with Sysmon.
+2. **Two native outputs.** Ready-to-paste XQL for Cortex XDR (`xdr_data`) and SPL for Splunk with Sysmon and Windows event logs.
 3. **Proof.** Events that must fire and events that must not. CI runs the rule *and the compiled XQL and SPL* against them.
 4. **What to do next.** Triage steps and the false positives you will actually meet.
 
@@ -35,7 +36,7 @@ miss, or what to do when one fires. Every rule here comes with four things:
 
 **[detections.rayenskhiri.online](https://detections.rayenskhiri.online)** runs every rule in your browser:
 
-* **Type a command line or paste a Sysmon event** (XML from Event Viewer, or JSON) and see which rules fire, why each one fired, the triage steps, and the XQL and SPL to copy.
+* **Type a command line or paste a Sysmon, Security or PowerShell event** (XML from Event Viewer, or JSON) and see which rules fire, why each one fired, the triage steps, and the XQL and SPL to copy.
 * **Replay an intrusion**: twelve steps from a phishing document to ransomware, with one step of normal admin work in the middle. Watch each detection light up on an ATT&CK board, and check that the normal step stays quiet.
 * **Nothing leaves the page.** No backend, no analytics, a strict Content Security Policy.
 
@@ -105,25 +106,58 @@ and
 | [DL-0006](docs/rules/DL-0006.md) | rundll32 runs script or loads from a URL | T1218.011 | execution | high |
 | [DL-0007](docs/rules/DL-0007.md) | Script host runs a script from a user-writable folder | T1059.005, T1059.007 | execution | medium |
 | [DL-0008](docs/rules/DL-0008.md) | WMIC creates a process, locally or on another host | T1047 | execution | medium |
+| [DL-0039](docs/rules/DL-0039.md) | SQL Server starts a shell (xp_cmdshell) | T1059.003, T1505.001 | execution | high |
+| [DL-0044](docs/rules/DL-0044.md) | Offensive PowerShell toolkit loaded (PowerView, PowerUp, Invoke-Mimikatz) | T1059.001, T1087.002, T1003.001 | execution | high |
 | [DL-0009](docs/rules/DL-0009.md) | Run key points to a user-writable path or a script host | T1547.001 | persistence | medium |
 | [DL-0010](docs/rules/DL-0010.md) | Scheduled task created to run a script host or a file in a user-writable path | T1053.005 | persistence | medium |
 | [DL-0011](docs/rules/DL-0011.md) | Service created with a suspicious binary path | T1543.003, T1569.002 | persistence | high |
+| [DL-0037](docs/rules/DL-0037.md) | Account added to the local Administrators group from the command line | T1098 | persistence | high |
+| [DL-0041](docs/rules/DL-0041.md) | DSRM administrator allowed to log on normally (DsrmAdminLogonBehavior) | T1098, T1112 | persistence | critical |
+| [DL-0045](docs/rules/DL-0045.md) | Security descriptor backdoor on WMI, PS Remoting, remote registry or AdminSDHolder | T1098, T1546.003, T1112 | persistence | critical |
+| [DL-0054](docs/rules/DL-0054.md) | Key credential added to an account (shadow credentials) | T1098, T1556 | persistence | high |
+| [DL-0056](docs/rules/DL-0056.md) | Permissions changed on AdminSDHolder or the domain root | T1098, T1222.001 | persistence | critical |
+| [DL-0057](docs/rules/DL-0057.md) | Member added to a privileged domain group | T1098.007 | persistence | high |
+| [DL-0059](docs/rules/DL-0059.md) | DSRM administrator password changed | T1098 | persistence | high |
+| [DL-0034](docs/rules/DL-0034.md) | AD object rights or memberships changed with PowerView or StandIn | T1098 | privilege-escalation | high |
+| [DL-0038](docs/rules/DL-0038.md) | Service binary path changed with sc config | T1574.011, T1543.003 | privilege-escalation | high |
+| [DL-0051](docs/rules/DL-0051.md) | Service ticket issued through delegation (S4U2Proxy) | T1558, T1134.001 | privilege-escalation | low |
+| [DL-0052](docs/rules/DL-0052.md) | Resource-based constrained delegation written on an object | T1098, T1134.001 | privilege-escalation | high |
+| [DL-0053](docs/rules/DL-0053.md) | Constrained delegation configured on an account | T1098, T1134.001 | privilege-escalation | medium |
+| [DL-0058](docs/rules/DL-0058.md) | SID history added to an account | T1134.005 | privilege-escalation | critical |
 | [DL-0012](docs/rules/DL-0012.md) | Microsoft Defender disabled or given exclusions | T1562.001 | defense-evasion | high |
 | [DL-0013](docs/rules/DL-0013.md) | Windows event logs cleared from the command line | T1070.001 | defense-evasion | high |
 | [DL-0014](docs/rules/DL-0014.md) | Windows system process name running from the wrong folder | T1036.005 | defense-evasion | high |
 | [DL-0015](docs/rules/DL-0015.md) | certutil used to download or decode a file | T1105, T1140 | defense-evasion | high |
+| [DL-0033](docs/rules/DL-0033.md) | In-memory .NET loader runs an offensive tool | T1620, T1562.001, T1027 | defense-evasion | high |
+| [DL-0040](docs/rules/DL-0040.md) | .NET profiler set to load a DLL (COR_PROFILER) | T1574.012, T1562.001 | defense-evasion | high |
+| [DL-0042](docs/rules/DL-0042.md) | LSA protection or credential caching weakened in the registry | T1562.001, T1003.001 | defense-evasion | high |
+| [DL-0043](docs/rules/DL-0043.md) | AMSI or ETW bypass in a PowerShell script block | T1562.001 | defense-evasion | high |
 | [DL-0016](docs/rules/DL-0016.md) | LSASS memory dumped with comsvcs.dll or ProcDump | T1003.001 | credential-access | critical |
 | [DL-0017](docs/rules/DL-0017.md) | SAM, SYSTEM, SECURITY hives or NTDS.dit copied for offline cracking | T1003.002, T1003.003, T1003.004 | credential-access | critical |
 | [DL-0018](docs/rules/DL-0018.md) | Kerberoasting or AS-REP roasting tool run | T1558.003, T1558.004 | credential-access | high |
 | [DL-0019](docs/rules/DL-0019.md) | Mimikatz modules on the command line | T1003.001, T1003.006, T1550.002, T1558.001 | credential-access | critical |
+| [DL-0031](docs/rules/DL-0031.md) | Rubeus requests, forges or injects Kerberos tickets | T1558, T1550.003, T1550.002 | credential-access | critical |
+| [DL-0032](docs/rules/DL-0032.md) | AD CS abuse tool looks for or requests vulnerable certificates | T1649 | credential-access | high |
+| [DL-0046](docs/rules/DL-0046.md) | DCSync, directory replication requested by an account that is not a DC | T1003.006 | credential-access | critical |
+| [DL-0047](docs/rules/DL-0047.md) | Kerberos service ticket with RC4 for a user service account (Kerberoasting) | T1558.003 | credential-access | medium |
+| [DL-0048](docs/rules/DL-0048.md) | TGT issued without Kerberos pre-authentication (AS-REP roasting) | T1558.004 | credential-access | high |
+| [DL-0050](docs/rules/DL-0050.md) | TGT requested with a certificate (PKINIT) | T1649, T1550 | credential-access | medium |
+| [DL-0055](docs/rules/DL-0055.md) | Service principal name added to a user account (targeted Kerberoasting) | T1558.003, T1098 | credential-access | medium |
+| [DL-0061](docs/rules/DL-0061.md) | Certificate issued with a subject alternative name supplied in the request | T1649 | credential-access | high |
+| [DL-0062](docs/rules/DL-0062.md) | Remote access to the print spooler or EFS pipe (authentication coercion) | T1187 | credential-access | medium |
 | [DL-0020](docs/rules/DL-0020.md) | Domain admin groups, domain controllers or trusts enumerated with built-in tools | T1069.002, T1087.002, T1482, T1018 | discovery | medium |
 | [DL-0021](docs/rules/DL-0021.md) | BloodHound collector (SharpHound) run | T1087.002, T1069.002, T1482 | discovery | high |
+| [DL-0030](docs/rules/DL-0030.md) | PowerView or PowerSploit AD recon functions on the command line | T1087.002, T1069.002, T1482, T1135 | discovery | high |
 | [DL-0022](docs/rules/DL-0022.md) | PsExec service runs a command | T1569.002, T1021.002 | lateral-movement | medium |
 | [DL-0023](docs/rules/DL-0023.md) | Impacket wmiexec or smbexec style command | T1047, T1021.002, T1569.002 | lateral-movement | high |
 | [DL-0024](docs/rules/DL-0024.md) | Command started through WinRM remoting | T1021.006 | lateral-movement | medium |
+| [DL-0036](docs/rules/DL-0036.md) | winrs runs a command on another host | T1021.006 | lateral-movement | medium |
+| [DL-0049](docs/rules/DL-0049.md) | TGT requested with RC4 encryption (possible overpass-the-hash) | T1550.002 | lateral-movement | medium |
+| [DL-0060](docs/rules/DL-0060.md) | Logon with new credentials (logon type 9, overpass-the-hash) | T1550.002, T1134.002 | lateral-movement | medium |
 | [DL-0025](docs/rules/DL-0025.md) | Living-off-the-land binary connects to the internet | T1105, T1218 | command-and-control | medium |
 | [DL-0026](docs/rules/DL-0026.md) | Connection to common Tor ports from a non-Tor process | T1090.003 | command-and-control | medium |
 | [DL-0027](docs/rules/DL-0027.md) | Script host or LOLBin looks up a paste site, file drop or tunnel service | T1102, T1105, T1572 | command-and-control | medium |
+| [DL-0035](docs/rules/DL-0035.md) | netsh port proxy set up to forward traffic | T1090.001 | command-and-control | medium |
 | [DL-0028](docs/rules/DL-0028.md) | rclone copies data to a remote | T1567.002, T1048 | exfiltration | high |
 | [DL-0029](docs/rules/DL-0029.md) | Shadow copies, backups or boot recovery removed | T1490 | impact | critical |
 <!-- rules:end -->
@@ -143,13 +177,26 @@ or take the file from [`build/xql`](build/xql). Good candidates for BIOCs or sch
 definition = index=sysmon source="XmlWinEventLog:Microsoft-Windows-Sysmon/Operational"
 ```
 
-(Settings → Advanced search → Search macros. Field names follow the Splunk Add-on for Sysmon.)
+The Windows event rules (Security on the DCs and CA, PowerShell 4104) use a `wineventlog` macro:
+
+```
+[wineventlog]
+definition = index=wineventlog (source="XmlWinEventLog:Security" OR source="XmlWinEventLog:Microsoft-Windows-PowerShell/Operational")
+```
+
+(Settings → Advanced search → Search macros. Field names follow the Splunk Add-on for Sysmon and the Splunk Add-on for Microsoft Windows with XML rendering.)
+
+**What has to be logged.** The Active Directory rules only see what Windows writes, so turn on: *Audit Directory Service Access*
+and *Directory Service Changes* on the DCs with a SACL on the domain root and AdminSDHolder (4662, 5136), *Kerberos Service Ticket
+Operations* and *Kerberos Authentication Service* (4768, 4769), *Security Group Management* (4728, 4732, 4756), *Certification
+Services* on the CA (4886, 4887), *Detailed File Share* (5145), and PowerShell script block logging (4104). In Cortex XDR, make sure
+these event IDs are in the Windows event log collection of the agent profile for DCs and the CA.
 
 **From the command line:**
 
 ```bash
 pip install -r requirements.txt
-python -m detlib show DL-0029       # print one rule in both languages
+python -m detlib show DL-0046       # print one rule in both languages
 python -m detlib test               # run every rule against its test events
 python -m detlib build              # regenerate build/, docs/rules/ and the table above
 ```
@@ -160,7 +207,7 @@ Copy any file in [`rules/`](rules), give it the next ID, and fill in:
 
 | Key | What goes in it |
 |---|---|
-| `logsource` | `process_creation`, `network_connection`, `dns_query`, `registry_set` or `file_event` |
+| `logsource` | `process_creation`, `network_connection`, `dns_query`, `registry_set`, `file_event` or `windows_event` |
 | `detection` | named selections plus a `condition` using `and`, `or`, `not` and parentheses |
 | field modifiers | none (equals), `contains`, `startswith`, `endswith`, `re`, `cidr`, and `all` to require every value |
 | `tests` | at least one `match` and one `no_match` event, using the same portable field names |
@@ -171,7 +218,7 @@ Field names per log source are in [`detlib/schema.py`](detlib/schema.py).
 
 ## How it is tested
 
-* **Reference matcher.** Each rule runs against its own events (`python -m detlib test`): 29 rules, 112 events.
+* **Reference matcher.** Each rule runs against its own events (`python -m detlib test`): 62 rules, 203 events.
 * **Compiled output, executed.** The test suite carries a small interpreter for the subset of XQL and SPL the
   compiler emits ([`tests/interp.py`](tests/interp.py)). Every test event is mapped to XDR and Sysmon column names
   and run through the *generated* query. Both must agree with the reference.
@@ -193,7 +240,8 @@ Field names per log source are in [`detlib/schema.py`](detlib/schema.py).
 | Deploy | Vercel redeploys the playground from `site/` on every push to `main` |
 | [Dependabot](.github/dependabot.yml) | Weekly updates for Actions and pip |
 
-**Honest limit:** the interpreter is not Cortex and not Splunk. The generated queries have not yet been run
+**Honest limit:** the interpreter is not Cortex and not Splunk. For Windows events, the XQL reads named values with
+`json_extract_scalar(action_evtlog_data_fields, "$.Name")`; check the field names on your tenant once before you rely on it. The generated queries have not yet been run
 against a live XDR tenant or Splunk instance from this repository. If one errors on your platform, please open
 an issue with the message.
 

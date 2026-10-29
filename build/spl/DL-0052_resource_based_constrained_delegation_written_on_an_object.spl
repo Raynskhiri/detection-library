@@ -1,0 +1,4 @@
+`wineventlog`
+| where EventCode=5136 AND lower(AttributeLDAPDisplayName)="msds-allowedtoactonbehalfofotheridentity"
+| table _time host EventCode SubjectUserName TargetUserName Message
+| sort - _time

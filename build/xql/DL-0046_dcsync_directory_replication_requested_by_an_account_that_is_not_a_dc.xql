@@ -1,0 +1,8 @@
+config case_sensitive = false
+| dataset = xdr_data
+| filter event_type = ENUM.EVENT_LOG
+| alter evt_subject_user = json_extract_scalar(action_evtlog_data_fields, "$.SubjectUserName"), evt_target_user = json_extract_scalar(action_evtlog_data_fields, "$.TargetUserName"), evt_object_properties = json_extract_scalar(action_evtlog_data_fields, "$.Properties")
+| filter (action_evtlog_event_id = 4662 and (evt_object_properties contains "1131f6aa-9c07-11d1-f79f-00c04fc2dcd2" or evt_object_properties contains "1131f6ad-9c07-11d1-f79f-00c04fc2dcd2" or evt_object_properties contains "89e95b76-444d-4c62-991a-0facbeda640c")) and not ((evt_subject_user != null and evt_subject_user ~= "(?i)\\$$"))
+| fields _time, agent_hostname, action_evtlog_event_id, evt_subject_user, evt_target_user, action_evtlog_message
+| sort desc _time
+| limit 1000

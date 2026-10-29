@@ -1,0 +1,33 @@
+id: DL-0040
+title: .NET profiler set to load a DLL (COR_PROFILER)
+description: >
+  Setting COR_ENABLE_PROFILING and COR_PROFILER in the Environment key makes every .NET
+  process, including PowerShell, load a DLL of the attacker's choice. Tools such as
+  InviShell use it to switch off PowerShell logging and AMSI for the user.
+attack: [T1574.012, T1562.001]
+tactic: defense-evasion
+severity: high
+logsource: registry_set
+detection:
+  profiler:
+    registry.key|endswith: \Environment
+    registry.value: [COR_PROFILER, COR_ENABLE_PROFILING, COR_PROFILER_PATH]
+  condition: profiler
+false_positives:
+  - Application performance monitoring agents (APM) that profile .NET apps. They set it machine-wide from their own installer.
+triage:
+  - Read COR_PROFILER_PATH. A DLL in a user folder means a bypass, not an APM agent.
+  - Expect missing PowerShell 4104 logs from that user after this point. Look at process creation instead.
+tests:
+  match:
+    - process.name: reg.exe
+      registry.key: 'HKU\S-1-5-21-1-2-3-1107\Environment'
+      registry.value: COR_PROFILER
+      registry.data: '{cf0d821e-299b-5307-a3d8-b283c03916db}'
+  no_match:
+    - process.name: explorer.exe
+      registry.key: 'HKU\S-1-5-21-1-2-3-1107\Environment'
+      registry.value: TEMP
+      registry.data: 'C:\Users\x\AppData\Local\Temp'
+references:
+  - https://github.com/OmerYa/Invisi-Shell

@@ -1,0 +1,36 @@
+id: DL-0043
+title: AMSI or ETW bypass in a PowerShell script block
+description: >
+  PowerShell script block logging (event 4104) records the code PowerShell actually ran,
+  after decoding. Bypasses that switch off AMSI (amsiInitFailed, AmsiScanBuffer patching,
+  amsi.dll tricks) or blind ETW (EtwEventWrite, PSEtwLogProvider) leave their strings here,
+  even when the command line is obfuscated.
+attack: [T1562.001]
+tactic: defense-evasion
+severity: high
+logsource: windows_event
+detection:
+  script_block:
+    event.id: 4104
+  bypass:
+    script.text|contains: [amsiinitfailed, amsiscanbuffer, amsiutils, amsicontext, amsiopensession, 'amsi.dll',
+                           etweventwrite, psetwlogprovider, cachedgrouppolicysettings]
+  condition: script_block and bypass
+false_positives:
+  - Security tools and training material that mention AMSI. Real bypasses use reflection on these names.
+triage:
+  - Read the next script blocks from the same host and session. The bypass is the first step; the tool loaded after it is the real payload (DL-0044).
+  - Check if the user also set COR_PROFILER (DL-0040) to hide later activity.
+tests:
+  match:
+    - event.id: 4104
+      script.text: "[Ref].Assembly.GetType('System.Management.Automation.AmsiUtils').GetField('amsiInitFailed','NonPublic,Static').SetValue($null,$true)"
+    - event.id: 4104
+      script.text: '$m = [Reflection.Assembly]::LoadWithPartialName("System.Core"); ... PSEtwLogProvider ... m_enabled'
+  no_match:
+    - event.id: 4104
+      script.text: 'Get-Service -Name WinDefend | Select-Object Status'
+    - event.id: 4688
+      script.text: 'amsiInitFailed'
+references:
+  - https://attack.mitre.org/techniques/T1562/001/

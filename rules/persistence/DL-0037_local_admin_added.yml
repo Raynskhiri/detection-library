@@ -1,0 +1,34 @@
+id: DL-0037
+title: Account added to the local Administrators group from the command line
+description: >
+  net localgroup administrators <user> /add, or Add-LocalGroupMember. Local privilege
+  escalation exploits (for example a service abuse with PowerUp) often end with exactly this
+  command run as SYSTEM.
+attack: [T1098]
+tactic: persistence
+severity: high
+logsource: process_creation
+detection:
+  net:
+    process.name: [net.exe, net1.exe]
+    process.command_line|contains|all: [localgroup, administrators, /add]
+  powershell:
+    process.command_line|contains|all: [add-localgroupmember, administrators]
+  condition: net or powershell
+false_positives:
+  - Build scripts and helpdesk tools that grant local admin. They run from known parents and accounts.
+triage:
+  - Check the parent. services.exe or a vulnerable service binary as parent means local privilege escalation through a service.
+  - Remove the account from the group and find how it got SYSTEM.
+tests:
+  match:
+    - parent.name: abyss.exe
+      process.name: net.exe
+      process.command_line: 'net localgroup Administrators dcorp\student1 /add'
+    - process.name: powershell.exe
+      process.command_line: 'powershell Add-LocalGroupMember -Group Administrators -Member corp\svc'
+  no_match:
+    - process.name: net.exe
+      process.command_line: 'net localgroup Administrators'
+references:
+  - https://attack.mitre.org/techniques/T1098/

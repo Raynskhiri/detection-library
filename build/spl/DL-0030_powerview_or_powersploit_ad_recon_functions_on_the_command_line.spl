@@ -1,0 +1,5 @@
+`sysmon` EventCode=1
+| eval process_name=lower(mvindex(split(Image,"\\"),-1)), parent_name=lower(mvindex(split(ParentImage,"\\"),-1))
+| where match(CommandLine, "(?i)get\\-domainuser") OR match(CommandLine, "(?i)get\\-domaingroupmember") OR match(CommandLine, "(?i)get\\-domaincomputer") OR match(CommandLine, "(?i)get\\-domainobjectacl") OR match(CommandLine, "(?i)find\\-interestingdomainacl") OR match(CommandLine, "(?i)invoke\\-sharefinder") OR match(CommandLine, "(?i)find\\-localadminaccess") OR match(CommandLine, "(?i)find\\-domainuserlocation") OR match(CommandLine, "(?i)invoke\\-userhunter") OR match(CommandLine, "(?i)get\\-domaintrust") OR match(CommandLine, "(?i)get\\-forestdomain") OR match(CommandLine, "(?i)get\\-domaingpo") OR match(CommandLine, "(?i)get\\-netsession") OR match(CommandLine, "(?i)get\\-netloggedon") OR match(CommandLine, "(?i)find\\-psremotinglocaladminaccess") OR match(CommandLine, "(?i)find\\-wmilocaladminaccess") OR match(CommandLine, "(?i)get\\-domainforeigngroupmember")
+| table _time host User ParentImage Image CommandLine
+| sort - _time

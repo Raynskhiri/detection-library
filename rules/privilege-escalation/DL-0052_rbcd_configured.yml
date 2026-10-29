@@ -1,0 +1,34 @@
+id: DL-0052
+title: Resource-based constrained delegation written on an object
+description: >
+  Event 5136 changing msDS-AllowedToActOnBehalfOfOtherIdentity. Whoever is listed there can
+  impersonate any user to that computer. With write rights on a computer object (for example
+  GenericWrite), an attacker adds a machine account they control and then uses S4U to become
+  an administrator on it.
+attack: [T1098, T1134.001]
+tactic: privilege-escalation
+severity: high
+logsource: windows_event
+detection:
+  rbcd:
+    event.id: 5136
+    attribute.name: msDS-AllowedToActOnBehalfOfOtherIdentity
+  condition: rbcd
+false_positives:
+  - Admins setting up RBCD for a real application. Rare and should be change-managed.
+triage:
+  - Read the new security descriptor to see which account was granted, then clear the attribute.
+  - Find who could write to the computer object (the ACL path) and remove that right.
+tests:
+  match:
+    - event.id: 5136
+      subject.user: 'STUDVM$'
+      object.dn: 'CN=mgmtsrv,CN=Computers,DC=tech,DC=corp'
+      object.class: computer
+      attribute.name: msDS-AllowedToActOnBehalfOfOtherIdentity
+  no_match:
+    - event.id: 5136
+      object.dn: 'CN=mgmtsrv,CN=Computers,DC=tech,DC=corp'
+      attribute.name: description
+references:
+  - https://attack.mitre.org/techniques/T1134/001/
