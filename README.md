@@ -2,8 +2,9 @@
 
 <p align="center">
   <b>Write a detection once. Get Cortex XDR XQL and Splunk SPL. Prove it with test events.</b><br>
-  62 hunts for the things that actually show up in Windows intrusions, from the first macro to deleted shadow copies,<br>
-  including full Active Directory attack coverage: Kerberos, delegation, ACL abuse, AD CS, DCSync, trusts and AMSI bypasses.<br>
+  67 hunts for the things that actually show up in intrusions, from the first macro to deleted shadow copies:<br>
+  full Active Directory attack coverage (Kerberos, delegation, ACL abuse, AD CS, DCSync, trusts, AMSI bypasses)<br>
+  and Linux web server exploitation such as PHP2Shell (CVE-2026-109618, CVE-2026-109619).<br>
   <b>Try them live: <a href="https://detections.rayenskhiri.online">detections.rayenskhiri.online</a></b>
 </p>
 
@@ -11,7 +12,7 @@
   <a href="https://github.com/Raynskhiri/detection-library/actions/workflows/tests.yml"><img src="https://github.com/Raynskhiri/detection-library/actions/workflows/tests.yml/badge.svg" alt="Tests"></a>
   <a href="https://github.com/Raynskhiri/detection-library/actions/workflows/security.yml"><img src="https://github.com/Raynskhiri/detection-library/actions/workflows/security.yml/badge.svg" alt="Security"></a>
   <a href="https://github.com/Raynskhiri/detection-library/releases/tag/latest"><img src="https://img.shields.io/badge/download-query%20packs-FF6B1A" alt="Query packs"></a>
-  <img src="https://img.shields.io/badge/rules-62-F97316" alt="62 rules">
+  <img src="https://img.shields.io/badge/rules-67-F97316" alt="67 rules">
   <img src="https://img.shields.io/badge/output-Cortex%20XQL%20%7C%20Splunk%20SPL-FA582D" alt="XQL and SPL">
   <img src="https://img.shields.io/badge/mapped%20to-MITRE%20ATT%26CK-C8102E" alt="MITRE ATT&CK">
   <img src="https://img.shields.io/badge/python-3.10%2B-3776AB?logo=python&logoColor=white" alt="Python 3.10+">
@@ -98,6 +99,9 @@ and
 <!-- rules:start -->
 | ID | Detection | ATT&CK | Tactic | Severity |
 |---|---|---|---|---|
+| [DL-0063](docs/rules/DL-0063.md) | Web server or PHP worker starts a shell or download tool (Linux) | T1190, T1059.004, T1505.003 | initial-access | high |
+| [DL-0066](docs/rules/DL-0066.md) | PHP ran out of memory before any script line ran (PHP2Shell probe) | T1190 | initial-access | medium |
+| [DL-0067](docs/rules/DL-0067.md) | Web server or PHP-FPM worker crashed with a segmentation fault | T1190 | initial-access | medium |
 | [DL-0001](docs/rules/DL-0001.md) | PowerShell with an encoded command | T1059.001, T1027 | execution | high |
 | [DL-0002](docs/rules/DL-0002.md) | PowerShell download cradle that runs what it fetched | T1059.001, T1105 | execution | high |
 | [DL-0003](docs/rules/DL-0003.md) | Office application starts a shell or script host | T1204.002, T1566.001 | execution | high |
@@ -108,6 +112,7 @@ and
 | [DL-0008](docs/rules/DL-0008.md) | WMIC creates a process, locally or on another host | T1047 | execution | medium |
 | [DL-0039](docs/rules/DL-0039.md) | SQL Server starts a shell (xp_cmdshell) | T1059.003, T1505.001 | execution | high |
 | [DL-0044](docs/rules/DL-0044.md) | Offensive PowerShell toolkit loaded (PowerView, PowerUp, Invoke-Mimikatz) | T1059.001, T1087.002, T1003.001 | execution | high |
+| [DL-0064](docs/rules/DL-0064.md) | Reverse shell one-liner on Linux | T1059.004, T1059.006 | execution | critical |
 | [DL-0009](docs/rules/DL-0009.md) | Run key points to a user-writable path or a script host | T1547.001 | persistence | medium |
 | [DL-0010](docs/rules/DL-0010.md) | Scheduled task created to run a script host or a file in a user-writable path | T1053.005 | persistence | medium |
 | [DL-0011](docs/rules/DL-0011.md) | Service created with a suspicious binary path | T1543.003, T1569.002 | persistence | high |
@@ -118,6 +123,7 @@ and
 | [DL-0056](docs/rules/DL-0056.md) | Permissions changed on AdminSDHolder or the domain root | T1098, T1222.001 | persistence | critical |
 | [DL-0057](docs/rules/DL-0057.md) | Member added to a privileged domain group | T1098.007 | persistence | high |
 | [DL-0059](docs/rules/DL-0059.md) | DSRM administrator password changed | T1098 | persistence | high |
+| [DL-0065](docs/rules/DL-0065.md) | PHP file written in the web root by the web server or PHP worker | T1505.003 | persistence | medium |
 | [DL-0034](docs/rules/DL-0034.md) | AD object rights or memberships changed with PowerView or StandIn | T1098 | privilege-escalation | high |
 | [DL-0038](docs/rules/DL-0038.md) | Service binary path changed with sc config | T1574.011, T1543.003 | privilege-escalation | high |
 | [DL-0051](docs/rules/DL-0051.md) | Service ticket issued through delegation (S4U2Proxy) | T1558, T1134.001 | privilege-escalation | low |
@@ -186,6 +192,17 @@ definition = index=wineventlog (source="XmlWinEventLog:Security" OR source="XmlW
 
 (Settings → Advanced search → Search macros. Field names follow the Splunk Add-on for Sysmon and the Splunk Add-on for Microsoft Windows with XML rendering.)
 
+The web server rules (Apache error log, PHP errors) use an `apache_error` macro:
+
+```
+[apache_error]
+definition = index=web sourcetype=apache:error
+```
+
+In Cortex XDR they read the Apache error log sent with an XDR Collector or a broker, in a dataset named `apache_httpd_raw`.
+If your dataset has another name, change the `dataset =` line. Linux process and file rules use the XDR agent's normal
+telemetry (`xdr_data`) and, in Splunk, Sysmon for Linux.
+
 **What has to be logged.** The Active Directory rules only see what Windows writes, so turn on: *Audit Directory Service Access*
 and *Directory Service Changes* on the DCs with a SACL on the domain root and AdminSDHolder (4662, 5136), *Kerberos Service Ticket
 Operations* and *Kerberos Authentication Service* (4768, 4769), *Security Group Management* (4728, 4732, 4756), *Certification
@@ -207,7 +224,7 @@ Copy any file in [`rules/`](rules), give it the next ID, and fill in:
 
 | Key | What goes in it |
 |---|---|
-| `logsource` | `process_creation`, `network_connection`, `dns_query`, `registry_set`, `file_event` or `windows_event` |
+| `logsource` | `process_creation`, `network_connection`, `dns_query`, `registry_set`, `file_event`, `windows_event` or `web_server_error` |
 | `detection` | named selections plus a `condition` using `and`, `or`, `not` and parentheses |
 | field modifiers | none (equals), `contains`, `startswith`, `endswith`, `re`, `cidr`, and `all` to require every value |
 | `tests` | at least one `match` and one `no_match` event, using the same portable field names |
@@ -218,7 +235,7 @@ Field names per log source are in [`detlib/schema.py`](detlib/schema.py).
 
 ## How it is tested
 
-* **Reference matcher.** Each rule runs against its own events (`python -m detlib test`): 62 rules, 203 events.
+* **Reference matcher.** Each rule runs against its own events (`python -m detlib test`): 67 rules, 221 events.
 * **Compiled output, executed.** The test suite carries a small interpreter for the subset of XQL and SPL the
   compiler emits ([`tests/interp.py`](tests/interp.py)). Every test event is mapped to XDR and Sysmon column names
   and run through the *generated* query. Both must agree with the reference.

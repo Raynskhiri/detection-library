@@ -1,0 +1,29 @@
+id: DL-0067
+title: Web server or PHP-FPM worker crashed with a segmentation fault
+description: >
+  Apache AH00051 / AH00052 "exit signal Segmentation fault" or PHP-FPM "exited on signal 11
+  (SIGSEGV)". Memory corruption exploits such as PHP2Shell often crash a few workers before
+  one attempt works, so crashes on an internet-facing PHP server are worth a look.
+attack: [T1190]
+tactic: initial-access
+severity: medium
+logsource: web_server_error
+detection:
+  apache_segv:
+    log.message|re: 'ah0005[12].*segmentation fault'
+  fpm_segv:
+    log.message|contains: 'exited on signal 11'
+  condition: apache_segv or fpm_segv
+false_positives:
+  - Buggy PHP extensions or modules that crash under load. Those crash at the same code path every time; check with the vendor.
+triage:
+  - Look at the requests just before the crash (access log, same second). Large multipart POSTs from one source point to exploitation.
+  - Check for PHP memory errors from the same client (DL-0066) and for processes under the worker (DL-0063).
+tests:
+  match:
+    - log.message: '[Thu Oct 22 09:14:03.551204 2026] [core:notice] [pid 812] AH00052: child pid 46983 exit signal Segmentation fault (11)'
+    - log.message: '[22-Oct-2026 09:14:03] WARNING: [pool www] child 2231 exited on signal 11 (SIGSEGV) after 41.2 seconds from start'
+  no_match:
+    - log.message: '[Thu Oct 22 09:00:00.000000 2026] [mpm_prefork:notice] [pid 812] AH00163: Apache/2.4.58 (Ubuntu) configured -- resuming normal operations'
+references:
+  - https://wazuh.com/blog/detecting-php2shell-remote-code-execution-with-wazuh/

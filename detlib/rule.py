@@ -33,7 +33,7 @@ from .schema import MODIFIERS, SOURCES
 ATTACK_ID = re.compile(r"^T\d{4}(\.\d{3})?$")
 RULE_ID = re.compile(r"^DL-\d{4}$")
 SEVERITIES = ("low", "medium", "high", "critical")
-TACTICS = ("execution", "persistence", "privilege-escalation", "defense-evasion", "credential-access",
+TACTICS = ("initial-access", "execution", "persistence", "privilege-escalation", "defense-evasion", "credential-access",
            "discovery", "lateral-movement", "command-and-control", "exfiltration", "impact")
 REQUIRED = ("id", "title", "description", "attack", "tactic", "severity", "logsource",
             "detection", "false_positives", "triage", "tests")

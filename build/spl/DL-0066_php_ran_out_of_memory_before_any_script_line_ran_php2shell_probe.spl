@@ -1,0 +1,4 @@
+`apache_error`
+| where match(_raw, "(?i)allowed\\ memory\\ size\\ of") AND match(_raw, "(?i)exhausted") AND match(_raw, "(?i)unknown\\ on\\ line\\ 0")
+| table _time host _raw
+| sort - _time

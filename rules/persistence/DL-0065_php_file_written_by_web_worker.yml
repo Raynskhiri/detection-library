@@ -1,0 +1,38 @@
+id: DL-0065
+title: PHP file written in the web root by the web server or PHP worker
+description: >
+  The web server or PHP worker creating a .php, .phtml or .phar file under the web root.
+  After remote code execution, attackers drop a web shell so they can come back even after
+  the bug is patched.
+attack: [T1505.003]
+tactic: persistence
+severity: medium
+logsource: file_event
+detection:
+  web_writer:
+    process.path|re: '/(apache2|httpd|nginx|php-fpm[0-9.]*|php-cgi[0-9.]*|frankenphp|lsphp[0-9]*|dash|sh|bash|curl|wget)$'
+  php_in_webroot:
+    file.path|re: '^/(var/www|srv/www|srv/http|usr/share/nginx)/.+\.(php[0-9]?|phtml|phar|pht)$'
+  condition: web_writer and php_in_webroot
+false_positives:
+  - CMS core and plugin updates (WordPress, Drupal) written by the PHP worker. Correlate with an update in the admin panel.
+triage:
+  - Open the file. Short files with eval, base64_decode, system, passthru or assert are web shells.
+  - Find the first request that hit the new file in the access log; that source IP is the attacker.
+tests:
+  match:
+    - process.name: php-fpm8.3
+      process.path: /usr/sbin/php-fpm8.3
+      file.path: /var/www/html/wp-content/uploads/2026/10/cache.php
+    - process.name: dash
+      process.path: /usr/bin/dash
+      file.path: /var/www/html/.config.phtml
+  no_match:
+    - process.name: php-fpm8.3
+      process.path: /usr/sbin/php-fpm8.3
+      file.path: /var/www/html/wp-content/uploads/2026/10/photo.jpg
+    - process.name: vim
+      process.path: /usr/bin/vim
+      file.path: /var/www/html/index.php
+references:
+  - https://attack.mitre.org/techniques/T1505/003/

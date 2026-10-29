@@ -1,0 +1,5 @@
+`sysmon` EventCode=11
+| eval process_name=lower(mvindex(split(Image,"\\"),-1)), file_name=lower(mvindex(split(TargetFilename,"\\"),-1))
+| where match(Image, "(?i)/(apache2|httpd|nginx|php-fpm[0-9.]*|php-cgi[0-9.]*|frankenphp|lsphp[0-9]*|dash|sh|bash|curl|wget)$") AND match(TargetFilename, "(?i)^/(var/www|srv/www|srv/http|usr/share/nginx)/.+\\.(php[0-9]?|phtml|phar|pht)$")
+| table _time host Image TargetFilename
+| sort - _time

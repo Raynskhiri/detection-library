@@ -3,7 +3,7 @@ import { autoParse, evaluate, explain } from "./engine.js";
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const attackUrl = (t) => `https://attack.mitre.org/techniques/${t.replace(".", "/")}/`;
-const TACTICS = ["execution", "persistence", "privilege-escalation", "defense-evasion", "credential-access",
+const TACTICS = ["initial-access", "execution", "persistence", "privilege-escalation", "defense-evasion", "credential-access",
   "discovery", "lateral-movement", "command-and-control", "exfiltration", "impact"];
 const SEV_ORDER = { critical: 0, high: 1, medium: 2, low: 3 };
 
@@ -41,6 +41,7 @@ const SAMPLES = [
   "EventID": 4104,
   "ScriptBlockText": "[Ref].Assembly.GetType('System.Management.Automation.AmsiUtils').GetField('amsiInitFailed','NonPublic,Static').SetValue($null,$true)"
 }` },
+  { label: "PHP2Shell probe (Apache log)", text: "[Thu Oct 22 09:14:02.118262 2026] [php:error] [pid 46981] [client 198.51.100.23:51522] PHP Fatal error:  Allowed memory size of 134217728 bytes exhausted (tried to allocate 65536 bytes) in Unknown on line 0" },
   { label: "Normal admin work", benign: true, text: "powershell.exe Get-Service -Name Spooler | Restart-Service" },
 ];
 
@@ -125,13 +126,13 @@ function render() {
     $("parsed").innerHTML = "";
     return;
   }
-  kind.textContent = `${parsed.kind} · ${parsed.logsource.replace("_", " ")}`;
+  kind.textContent = `${parsed.kind} · ${parsed.logsource.replace(/_/g, " ")}`;
   kind.className = "chip ok";
   $("parsed").innerHTML = Object.entries(parsed.event).map(([k, v]) => `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>`).join("");
   const fired = evaluate(RULES, parsed.logsource, parsed.event)
     .sort((a, b) => SEV_ORDER[a.severity] - SEV_ORDER[b.severity] || a.id.localeCompare(b.id));
   const pool = RULES.filter((r) => r.logsource === parsed.logsource).length;
-  $("count").textContent = `${fired.length} of ${pool} ${parsed.logsource.replace("_", " ")} rules fired`;
+  $("count").textContent = `${fired.length} of ${pool} ${parsed.logsource.replace(/_/g, " ")} rules fired`;
   hits.innerHTML = fired.length
     ? fired.map((r, i) => hitCard(r, parsed.event, i)).join("")
     : `<div class="empty quiet"><b>No detection fired.</b>Either this is normal activity, or you found a gap. If it is an attack, that is a rule worth writing.</div>`;

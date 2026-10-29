@@ -1,0 +1,4 @@
+`apache_error`
+| where match(_raw, "(?i)ah0005[12].*segmentation fault") OR match(_raw, "(?i)exited\\ on\\ signal\\ 11")
+| table _time host _raw
+| sort - _time

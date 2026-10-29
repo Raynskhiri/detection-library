@@ -1,0 +1,30 @@
+id: DL-0066
+title: PHP ran out of memory before any script line ran (PHP2Shell probe)
+description: >
+  "Allowed memory size ... exhausted" with "Unknown on line 0" means PHP hit memory_limit
+  while parsing the request, before the application started. CVE-2026-109618 is triggered
+  exactly this way, with a large multipart POST, so a few of these from one client can be
+  a PHP2Shell attempt. A successful exploit can still return HTTP 200, so do not wait for a crash.
+attack: [T1190]
+tactic: initial-access
+severity: medium
+logsource: web_server_error
+detection:
+  oom_at_parse:
+    log.message|contains|all: ['allowed memory size of', 'exhausted', 'unknown on line 0']
+  condition: oom_at_parse
+false_positives:
+  - Very large legitimate form posts on servers with a small memory_limit. They come from known users and repeat the same URL.
+triage:
+  - Count these per client IP over a few minutes. Five or more from one source is a strong signal (see the correlation query on the rule page).
+  - Check the same host for a shell under the web worker (DL-0063) and new PHP files in the web root (DL-0065).
+  - Confirm the PHP version is patched and session.upload_progress.enabled is 0 until it is.
+tests:
+  match:
+    - log.message: '[Thu Oct 22 09:14:02.118262 2026] [php:error] [pid 46981] [client 198.51.100.23:51522] PHP Fatal error:  Allowed memory size of 134217728 bytes exhausted (tried to allocate 65536 bytes) in Unknown on line 0'
+  no_match:
+    - log.message: '[Thu Oct 22 09:14:02.118262 2026] [php:error] [pid 46981] [client 198.51.100.23:51522] PHP Fatal error:  Allowed memory size of 134217728 bytes exhausted (tried to allocate 20480 bytes) in /var/www/html/report.php on line 88'
+    - log.message: '[Thu Oct 22 09:14:02.118262 2026] [core:notice] [pid 812] AH00094: Command line: ''/usr/sbin/apache2'''
+references:
+  - https://securitylabs.datadoghq.com/articles/php2shell-critical-vulnerabilities-in-php/
+  - https://wazuh.com/blog/detecting-php2shell-remote-code-execution-with-wazuh/

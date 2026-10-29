@@ -32,6 +32,8 @@ class LogSource:
     # XQL ``alter`` expressions run before the rule filter (for example to pull
     # named values out of a Windows event's data fields).
     xql_alters: tuple[str, ...] = ()
+    # Most sources live in xdr_data. Logs sent through an XDR Collector or broker land in their own dataset.
+    xql_dataset: str = "xdr_data"
 
 
 def _basename(src: str, dst: str) -> str:
@@ -159,6 +161,18 @@ SOURCES: dict[str, LogSource] = {
                 "file.name": Field("action_file_name", "file_name")},
         xql_columns=("_time", "agent_hostname", "actor_process_image_name", "action_file_path"),
         spl_columns=("_time", "host", "Image", "TargetFilename"),
+    ),
+    "web_server_error": LogSource(
+        name="web_server_error",
+        description="A line from the web server error log, including PHP errors (Apache error.log; "
+                    "XDR Collector dataset apache_httpd_raw, Splunk sourcetype apache:error)",
+        xql_filter="_raw_log != null",
+        spl_base="`apache_error`",
+        spl_evals=(),
+        fields={"log.message": Field("_raw_log", "_raw")},
+        xql_columns=("_time", "_raw_log"),
+        spl_columns=("_time", "host", "_raw"),
+        xql_dataset="apache_httpd_raw",
     ),
     "windows_event": LogSource(
         name="windows_event",

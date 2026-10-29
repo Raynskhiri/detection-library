@@ -1,0 +1,5 @@
+`sysmon` EventCode=1
+| eval process_name=lower(mvindex(split(Image,"\\"),-1)), parent_name=lower(mvindex(split(ParentImage,"\\"),-1))
+| where match(CommandLine, "(?i)(/dev/(tcp|udp)/|\\bbash\\s+-i\\b|\\bnc(at)?\\b.*\\s-(e|c)\\s|mkfifo\\s|socat\\b.*exec:|socket\\.socket\\(|pty\\.spawn\\(|IO::Socket::INET)")
+| table _time host User ParentImage Image CommandLine
+| sort - _time

@@ -203,6 +203,10 @@ export function autoParse(text, fieldNames, parent) {
   const t = text.trim();
   if (!t) return null;
   if (t.startsWith("<")) return { kind: "Event XML", ...parseSysmonXml(t) };
+  // A web server error log line, for example "[Tue Oct 20 ...] [php:error] [pid 1] [client ...] PHP Fatal error: ..."
+  if (/^\[[A-Z][a-z]{2} [A-Z][a-z]{2} /.test(t) || /^\[\d{4}-\d{2}-\d{2}/.test(t)) {
+    return { kind: "Web server log", logsource: "web_server_error", event: { "log.message": t } };
+  }
   if (t.startsWith("{")) return { kind: "JSON", ...parseJson(t, fieldNames) };
   return { kind: "Command line", ...parseCommandLine(t, parent) };
 }

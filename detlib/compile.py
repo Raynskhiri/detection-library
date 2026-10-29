@@ -71,7 +71,7 @@ def to_xql(rule: Rule) -> str:
         expr = expr[1:-1]
     lines = [
         "config case_sensitive = false",
-        "| dataset = xdr_data",
+        f"| dataset = {src.xql_dataset}",
         f"| filter {src.xql_filter}",
         *([f"| alter {', '.join(_used_alters(rule, src))}"] if src.xql_alters else []),
         f"| filter {expr}",
