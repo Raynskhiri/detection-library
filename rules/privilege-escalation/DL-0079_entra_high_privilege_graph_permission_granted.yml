@@ -1,0 +1,56 @@
+id: DL-0079
+title: Tenant-wide Microsoft Graph or Exchange permission granted to an app
+description: >
+  "Add app role assignment to service principal" (application permission, admin consent)
+  for a permission that controls the whole tenant: RoleManagement.ReadWrite.Directory,
+  AppRoleAssignment.ReadWrite.All, Application.ReadWrite.All, Directory.ReadWrite.All,
+  Mail.ReadWrite / Mail.Read, Files.ReadWrite.All, Sites.FullControl.All or Exchange
+  full_access_as_app. With any of the first three an app can promote itself to Global
+  Administrator; Microsoft assessed that Storm-0940 likely abused Directory.ReadWrite.All
+  granted to the ConnectWise apps. Granting these should be rare and always reviewed, and an
+  app granting them to an app is how attackers widen their own access.
+attack: [T1098.003, T1528]
+tactic: privilege-escalation
+severity: high
+logsource: entra_audit
+detection:
+  app_role_assignment:
+    audit.operation: [Add app role assignment to service principal, Add app role assignment grant to user,
+                      Consent to application]
+  dangerous_permission:
+    target.details|contains: [RoleManagement.ReadWrite.Directory, AppRoleAssignment.ReadWrite.All,
+                              Application.ReadWrite.All, Directory.ReadWrite.All, Mail.ReadWrite, Mail.Read,
+                              Files.ReadWrite.All, Sites.FullControl.All, full_access_as_app]
+  condition: app_role_assignment and dangerous_permission
+false_positives:
+  - Onboarding a new backup, security or migration vendor. These tools really need broad rights. Record the app ID and the business owner when you approve it, then keep this rule for every grant after that.
+triage:
+  - Who granted it (initiator.user or initiator.app) and to which app (target.name)? A grant made by an app, or outside an onboarding ticket, is an escalation.
+  - List everything that app can do now (Enterprise applications, Permissions) and check its sign-ins since the grant (DL-0078 pattern).
+  - Remove the assignment and revoke the app's credentials if nobody owns the change.
+tests:
+  match:
+    - audit.operation: Add app role assignment to service principal
+      audit.category: ApplicationManagement
+      initiator.app: ConnectWise Cloud Management - MS Graph
+      target.type: ServicePrincipal
+      target.name: Microsoft Graph
+      target.details: '["Microsoft Graph", "\"RoleManagement.ReadWrite.Directory\"", "\"ConnectWise Cloud Management - MS Graph\""]'
+    - audit.operation: Consent to application
+      initiator.user: m.trabelsi@contoso.tn
+      target.type: ServicePrincipal
+      target.name: Mail Archiver Pro
+      target.details: '"Mail.Read Mail.ReadWrite offline_access"'
+  no_match:
+    - audit.operation: Add app role assignment to service principal
+      initiator.user: it.admin@contoso.tn
+      target.type: ServicePrincipal
+      target.name: Microsoft Graph
+      target.details: '["Microsoft Graph", "\"User.Read.All\""]'
+    - audit.operation: Add member to role
+      initiator.app: ConnectWise Cloud Management - MS Graph
+      target.type: ServicePrincipal
+      target.details: '"Directory.ReadWrite.All"'
+references:
+  - https://www.microsoft.com/en-us/security/blog/2026/10/21/storm-0940-uses-artex-agentic-ai-connectwise-supply-chain-compromise/
+  - https://www.bleepingcomputer.com/news/security/hackers-breach-microsoft-365-tenants-via-connectwise-supply-chain-attack/

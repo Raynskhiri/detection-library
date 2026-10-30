@@ -117,6 +117,69 @@ FORTIGATE_FIELDS = {
 }
 
 
+# Microsoft Entra ID audit log and service principal sign-ins. Cortex XDR collects both through the
+# Office 365 / Entra ID data source into msft_azure_ad_audit_raw and msft_azure_ad_raw, with columns
+# named after the Microsoft Graph directoryAudit and signIn resources. Splunk reads them from the
+# Splunk Add-on for Microsoft Cloud Services (sourcetype azure:monitor:aad, Azure Monitor schema,
+# everything under properties.*). The alters and evals below flatten both into the same aliases.
+ENTRA_AUDIT_XQL = {
+    "aud_operation": "activityDisplayName",
+    "aud_category": "category",
+    "aud_result": "result",
+    "aud_initiator_app": 'json_extract_scalar(initiatedBy, "$.app.displayName")',
+    "aud_initiator_app_id": 'json_extract_scalar(initiatedBy, "$.app.appId")',
+    "aud_initiator_user": 'json_extract_scalar(initiatedBy, "$.user.userPrincipalName")',
+    "aud_target_type": 'json_extract_scalar(targetResources, "$[0].type")',
+    "aud_target_name": 'json_extract_scalar(targetResources, "$[0].displayName")',
+    "aud_targets": "to_string(targetResources)",
+    "aud_user_agent": 'arrayindex(regextract(to_string(additionalDetails), "User-Agent\\\\\\",\\\\\\"value\\\\\\":\\\\\\"([^\\\\\\"]*)"), 0)',
+}
+ENTRA_AUDIT_SPL = {
+    "aud_operation": "operationName",
+    "aud_category": "category",
+    "aud_result": "'properties.result'",
+    "aud_initiator_app": "'properties.initiatedBy.app.displayName'",
+    "aud_initiator_app_id": "'properties.initiatedBy.app.appId'",
+    "aud_initiator_user": "'properties.initiatedBy.user.userPrincipalName'",
+    "aud_target_type": "mvindex('properties.targetResources{}.type',0)",
+    "aud_target_name": "mvindex('properties.targetResources{}.displayName',0)",
+    "aud_targets": "mvjoin(mvappend('properties.targetResources{}.displayName','properties.targetResources{}.modifiedProperties{}.newValue'),\" | \")",
+    "aud_user_agent": "mvindex('properties.additionalDetails{}.value',mvfind('properties.additionalDetails{}.key',\"User-Agent\"))",
+}
+ENTRA_AUDIT_FIELDS = {
+    "audit.operation": "aud_operation", "audit.category": "aud_category", "audit.result": "aud_result",
+    "initiator.app": "aud_initiator_app", "initiator.app_id": "aud_initiator_app_id",
+    "initiator.user": "aud_initiator_user", "target.type": "aud_target_type", "target.name": "aud_target_name",
+    "target.details": "aud_targets", "user_agent": "aud_user_agent",
+}
+
+ENTRA_SIGNIN_XQL = {
+    "si_app_id": "appId",
+    "si_app_name": "appDisplayName",
+    "si_sp_name": "servicePrincipalName",
+    "si_ip": "ipAddress",
+    "si_user_agent": "userAgent",
+    "si_resource": "resourceDisplayName",
+    "si_error": 'json_extract_scalar(status, "$.errorCode")',
+    "si_event_types": "to_string(signInEventTypes)",
+}
+ENTRA_SIGNIN_SPL = {
+    "si_app_id": "'properties.appId'",
+    "si_app_name": "'properties.appDisplayName'",
+    "si_sp_name": "'properties.servicePrincipalName'",
+    "si_ip": "coalesce('properties.ipAddress',callerIpAddress)",
+    "si_user_agent": "'properties.userAgent'",
+    "si_resource": "'properties.resourceDisplayName'",
+    "si_error": "'properties.status.errorCode'",
+    "si_event_types": "category",
+}
+ENTRA_SIGNIN_FIELDS = {
+    "signin.app_id": "si_app_id", "signin.app_name": "si_app_name", "signin.sp_name": "si_sp_name",
+    "signin.ip": "si_ip", "user_agent": "si_user_agent", "signin.resource": "si_resource",
+    "signin.error_code": "si_error", "signin.type": "si_event_types",
+}
+
+
 def _evt_alias(portable: str) -> str:
     return "evt_" + portable.replace(".", "_")
 
@@ -213,6 +276,36 @@ SOURCES: dict[str, LogSource] = {
         spl_columns=("_time", "devname", "logid", "user", "srcip", "ui", "logdesc", "msg"),
         xql_alters=tuple(_fg_alter(n) for n in FORTIGATE_TOKENS + FORTIGATE_QUOTED),
         xql_dataset="fortinet_fortigate_raw",
+    ),
+    "entra_audit": LogSource(
+        name="entra_audit",
+        description="A Microsoft Entra ID audit log record: role assignments, app credentials, consent, "
+                    "directory changes (XDR dataset msft_azure_ad_audit_raw; Splunk azure:monitor:aad AuditLogs)",
+        xql_filter="activityDisplayName != null",
+        spl_base="`azure_monitor_aad` category=AuditLogs",
+        spl_evals=tuple(f"{k}={v}" for k, v in ENTRA_AUDIT_SPL.items()),
+        fields={p: Field(a, a) for p, a in ENTRA_AUDIT_FIELDS.items()},
+        xql_columns=("_time", "aud_operation", "aud_initiator_app", "aud_initiator_user", "aud_target_type",
+                     "aud_target_name", "aud_user_agent", "aud_targets"),
+        spl_columns=("_time", "aud_operation", "aud_initiator_app", "aud_initiator_user", "aud_target_type",
+                     "aud_target_name", "aud_user_agent", "aud_targets"),
+        xql_alters=tuple(f"{k} = {v}" for k, v in ENTRA_AUDIT_XQL.items()),
+        xql_dataset="msft_azure_ad_audit_raw",
+    ),
+    "entra_sp_signin": LogSource(
+        name="entra_sp_signin",
+        description="A Microsoft Entra ID service principal (app-only) sign-in (XDR dataset msft_azure_ad_raw; "
+                    "Splunk azure:monitor:aad ServicePrincipalSignInLogs)",
+        xql_filter="appId != null",
+        spl_base="`azure_monitor_aad` category=ServicePrincipalSignInLogs",
+        spl_evals=tuple(f"{k}={v}" for k, v in ENTRA_SIGNIN_SPL.items()),
+        fields={p: Field(a, a) for p, a in ENTRA_SIGNIN_FIELDS.items()},
+        xql_columns=("_time", "si_app_name", "si_app_id", "si_sp_name", "si_ip", "si_user_agent", "si_resource",
+                     "si_error"),
+        spl_columns=("_time", "si_app_name", "si_app_id", "si_sp_name", "si_ip", "si_user_agent", "si_resource",
+                     "si_error"),
+        xql_alters=tuple(f"{k} = {v}" for k, v in ENTRA_SIGNIN_XQL.items()),
+        xql_dataset="msft_azure_ad_raw",
     ),
     "windows_event": LogSource(
         name="windows_event",

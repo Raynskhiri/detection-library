@@ -1,0 +1,65 @@
+id: DL-0076
+title: Privileged Entra ID role given to a service principal by an application
+description: >
+  "Add member to role" where the target is a service principal, the role is privileged
+  (Global Administrator, Privileged Role Administrator, Application or Cloud Application
+  Administrator, Exchange Administrator...) and the change was made by an application, not a
+  person. In the October 2026 ConnectWise supply chain compromise (Storm-0940), ConnectWise
+  Cloud Management service principals added themselves to Exchange Administrator in about fifty
+  tenants and, in one, to Global Administrator, five minutes before planting secrets in other
+  apps. Humans assign roles through the portal; an app granting roles to an app is the attacker
+  using permissions such as RoleManagement.ReadWrite.Directory that a vendor was trusted with.
+attack: [T1098.003]
+tactic: privilege-escalation
+severity: critical
+logsource: entra_audit
+detection:
+  role_added:
+    audit.operation: [Add member to role, Add eligible member to role]
+    target.type: ServicePrincipal
+  by_an_app:
+    initiator.app|re: '.+'
+  privileged_role:
+    target.details|contains: [Global Administrator, Company Administrator, Privileged Role Administrator,
+                              Privileged Authentication Administrator, Application Administrator,
+                              Cloud Application Administrator, Exchange Administrator, SharePoint Administrator,
+                              Security Administrator, Hybrid Identity Administrator, User Administrator,
+                              Partner Tier2 Support, Directory Writers]
+  condition: role_added and by_an_app and privileged_role
+false_positives:
+  - Identity governance or PIM automation that assigns roles through its own service principal. It uses one known app and a ticketed workflow.
+triage:
+  - Compare initiator.app with target.name. The same app on both sides is a self-assignment, the exact Storm-0940 pattern, and should be treated as an active intrusion.
+  - Look at what the service principal did in the next hour, above all new credentials on other apps (DL-0077) and new high-privilege Graph permissions (DL-0079).
+  - Remove the role, disable the service principal (do not delete it, you need its configuration as evidence) and revoke its credentials. Existing app tokens stay valid until they expire, up to about 90 minutes.
+tests:
+  match:
+    - audit.operation: Add member to role
+      audit.category: RoleManagement
+      audit.result: success
+      initiator.app: ConnectWise Cloud Management - MS Teams
+      initiator.app_id: 24205314-2b89-4e07-a2a4-579e898a5640
+      target.type: ServicePrincipal
+      target.name: ConnectWise Cloud Management - MS Teams
+      target.details: '["ConnectWise Cloud Management - MS Teams", "\"62e90394-69f5-4237-9190-012177145e10\"", "\"Global Administrator\""]'
+    - audit.operation: Add member to role
+      audit.category: RoleManagement
+      initiator.app: ConnectWise Cloud Management - Exchange Online
+      target.type: ServicePrincipal
+      target.name: ConnectWise Cloud Management - Exchange Online
+      target.details: '"Exchange Administrator"'
+  no_match:
+    - audit.operation: Add member to role
+      audit.category: RoleManagement
+      initiator.user: it.admin@contoso.tn
+      target.type: ServicePrincipal
+      target.name: Backup Connector
+      target.details: '"Exchange Administrator"'
+    - audit.operation: Add member to role
+      initiator.app: Lifecycle Workflows
+      target.type: User
+      target.name: s.benali@contoso.tn
+      target.details: '"Helpdesk Administrator"'
+references:
+  - https://www.microsoft.com/en-us/security/blog/2026/10/21/storm-0940-uses-artex-agentic-ai-connectwise-supply-chain-compromise/
+  - https://research.splunk.com/cloud/5dfaa3d3-e2e4-4053-8252-16d9ee528c41/

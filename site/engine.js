@@ -179,10 +179,62 @@ export function parseJson(text, fieldNames) {
     return fromSysmon(Number(obj.EventID ?? obj.EventCode ?? obj.event_id), obj);
   }
   if (obj.logsource && obj.event) return { logsource: obj.logsource, event: obj.event };
+  if (obj.activityDisplayName || (obj.operationName && obj.properties && obj.properties.targetResources)) {
+    return { logsource: "entra_audit", event: fromEntraAudit(obj) };
+  }
+  if (obj.appId || (obj.properties && obj.properties.appId)) {
+    return { logsource: "entra_sp_signin", event: fromEntraSignIn(obj) };
+  }
   const keys = Object.keys(obj);
   const guess = Object.entries(fieldNames).find(([, fields]) => keys.every((k) => fields.includes(k)) &&
     keys.some((k) => !["process.name", "process.path", "process.command_line", "user"].includes(k)));
   return { logsource: guess ? guess[0] : "process_creation", event: obj };
+}
+
+function compact(ev) {
+  return Object.fromEntries(Object.entries(ev).filter(([, v]) => v !== undefined && v !== null && v !== ""));
+}
+
+/** An Entra ID audit record, as Microsoft Graph (directoryAudit) or Azure Monitor (properties.*) returns it. */
+export function fromEntraAudit(obj) {
+  const p = obj.properties || obj;
+  const by = p.initiatedBy || {};
+  const targets = p.targetResources || [];
+  const first = targets[0] || {};
+  const details = [];
+  for (const t of targets) {
+    if (t.displayName) details.push(t.displayName);
+    for (const m of t.modifiedProperties || []) if (m.newValue) details.push(m.newValue);
+  }
+  const ua = (p.additionalDetails || []).find((d) => /^user-agent$/i.test(d.key || ""));
+  return compact({
+    "audit.operation": obj.activityDisplayName || obj.operationName,
+    "audit.category": p.category || obj.category,
+    "audit.result": p.result || obj.resultType,
+    "initiator.app": by.app && by.app.displayName,
+    "initiator.app_id": by.app && by.app.appId,
+    "initiator.user": by.user && by.user.userPrincipalName,
+    "target.type": first.type,
+    "target.name": first.displayName,
+    "target.details": details.join(" | "),
+    "user_agent": ua && ua.value,
+  });
+}
+
+/** An Entra ID service principal sign-in, as Microsoft Graph or Azure Monitor returns it. */
+export function fromEntraSignIn(obj) {
+  const p = obj.properties || obj;
+  const status = p.status || {};
+  return compact({
+    "signin.app_id": p.appId,
+    "signin.app_name": p.appDisplayName,
+    "signin.sp_name": p.servicePrincipalName,
+    "signin.ip": p.ipAddress || obj.callerIpAddress,
+    "user_agent": p.userAgent,
+    "signin.resource": p.resourceDisplayName,
+    "signin.error_code": status.errorCode === undefined ? undefined : String(status.errorCode),
+    "signin.type": Array.isArray(p.signInEventTypes) ? p.signInEventTypes.join(",") : obj.category,
+  });
 }
 
 /** A FortiGate key=value log line. Keeps the fields the fortigate rules know (fg.*). */

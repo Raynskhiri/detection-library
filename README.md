@@ -2,10 +2,11 @@
 
 <p align="center">
   <b>Write a detection once. Get Cortex XDR XQL and Splunk SPL. Prove it with test events.</b><br>
-  75 hunts for the things that actually show up in intrusions, from the first macro to deleted shadow copies:<br>
+  79 hunts for the things that actually show up in intrusions, from the first macro to deleted shadow copies:<br>
   full Active Directory attack coverage (Kerberos, delegation, ACL abuse, AD CS, DCSync, trusts, AMSI bypasses)<br>
   Linux web server exploitation such as PHP2Shell (CVE-2026-109618, CVE-2026-109619)<br>
-  and FortiGate compromise you can catch with nothing but the firewall's own logs.<br>
+  FortiGate compromise you can catch with nothing but the firewall's own logs<br>
+  and Entra ID backdoors planted through a trusted vendor app (Storm-0940, ConnectWise).<br>
   <b>Try them live: <a href="https://detections.rayenskhiri.online">detections.rayenskhiri.online</a></b>
 </p>
 
@@ -13,7 +14,7 @@
   <a href="https://github.com/Raynskhiri/detection-library/actions/workflows/tests.yml"><img src="https://github.com/Raynskhiri/detection-library/actions/workflows/tests.yml/badge.svg" alt="Tests"></a>
   <a href="https://github.com/Raynskhiri/detection-library/actions/workflows/security.yml"><img src="https://github.com/Raynskhiri/detection-library/actions/workflows/security.yml/badge.svg" alt="Security"></a>
   <a href="https://github.com/Raynskhiri/detection-library/releases/tag/latest"><img src="https://img.shields.io/badge/download-query%20packs-FF6B1A" alt="Query packs"></a>
-  <img src="https://img.shields.io/badge/rules-75-F97316" alt="75 rules">
+  <img src="https://img.shields.io/badge/rules-79-F97316" alt="79 rules">
   <img src="https://img.shields.io/badge/output-Cortex%20XQL%20%7C%20Splunk%20SPL-FA582D" alt="XQL and SPL">
   <img src="https://img.shields.io/badge/mapped%20to-MITRE%20ATT%26CK-C8102E" alt="MITRE ATT&CK">
   <img src="https://img.shields.io/badge/python-3.10%2B-3776AB?logo=python&logoColor=white" alt="Python 3.10+">
@@ -105,6 +106,7 @@ and
 | [DL-0067](docs/rules/DL-0067.md) | Web server or PHP-FPM worker crashed with a segmentation fault | T1190 | initial-access | medium |
 | [DL-0068](docs/rules/DL-0068.md) | FortiGate admin login through FortiCloud SSO or from an internet address | T1190, T1078 | initial-access | high |
 | [DL-0074](docs/rules/DL-0074.md) | Admin or SSL VPN login with an account name used in FortiGate intrusions | T1078, T1133 | initial-access | medium |
+| [DL-0078](docs/rules/DL-0078.md) | ConnectWise / SkyKick app signed in from a public IPv4 address or Storm-0940 infrastructure | T1199, T1078.004, T1195 | initial-access | high |
 | [DL-0001](docs/rules/DL-0001.md) | PowerShell with an encoded command | T1059.001, T1027 | execution | high |
 | [DL-0002](docs/rules/DL-0002.md) | PowerShell download cradle that runs what it fetched | T1059.001, T1105 | execution | high |
 | [DL-0003](docs/rules/DL-0003.md) | Office application starts a shell or script host | T1204.002, T1566.001 | execution | high |
@@ -130,12 +132,15 @@ and
 | [DL-0069](docs/rules/DL-0069.md) | New administrator account created on a FortiGate | T1136.001, T1098 | persistence | high |
 | [DL-0071](docs/rules/DL-0071.md) | FortiGate firewall policy set to accept any source to any destination | T1562.004, T1133 | persistence | high |
 | [DL-0073](docs/rules/DL-0073.md) | FortiGate automation stitch, action or auto-script created | T1053, T1059 | persistence | medium |
+| [DL-0077](docs/rules/DL-0077.md) | Secret or certificate added to an Entra ID app by another app or by a script | T1098.001 | persistence | high |
 | [DL-0034](docs/rules/DL-0034.md) | AD object rights or memberships changed with PowerView or StandIn | T1098 | privilege-escalation | high |
 | [DL-0038](docs/rules/DL-0038.md) | Service binary path changed with sc config | T1574.011, T1543.003 | privilege-escalation | high |
 | [DL-0051](docs/rules/DL-0051.md) | Service ticket issued through delegation (S4U2Proxy) | T1558, T1134.001 | privilege-escalation | low |
 | [DL-0052](docs/rules/DL-0052.md) | Resource-based constrained delegation written on an object | T1098, T1134.001 | privilege-escalation | high |
 | [DL-0053](docs/rules/DL-0053.md) | Constrained delegation configured on an account | T1098, T1134.001 | privilege-escalation | medium |
 | [DL-0058](docs/rules/DL-0058.md) | SID history added to an account | T1134.005 | privilege-escalation | critical |
+| [DL-0076](docs/rules/DL-0076.md) | Privileged Entra ID role given to a service principal by an application | T1098.003 | privilege-escalation | critical |
+| [DL-0079](docs/rules/DL-0079.md) | Tenant-wide Microsoft Graph or Exchange permission granted to an app | T1098.003, T1528 | privilege-escalation | high |
 | [DL-0012](docs/rules/DL-0012.md) | Microsoft Defender disabled or given exclusions | T1562.001 | defense-evasion | high |
 | [DL-0013](docs/rules/DL-0013.md) | Windows event logs cleared from the command line | T1070.001 | defense-evasion | high |
 | [DL-0014](docs/rules/DL-0014.md) | Windows system process name running from the wrong folder | T1036.005 | defense-evasion | high |
@@ -224,6 +229,22 @@ definition = index=network sourcetype=fortigate_event OR sourcetype=fortigate_tr
 Keep the system event log on and keep at least 60 days of it: in the 2026 campaigns, short retention is why responders
 could not find how the attackers got in.
 
+The Entra ID rules (DL-0076 to DL-0079) need no agent at all, only the tenant's audit and service principal
+sign-in logs. In Cortex XDR, connect the Office 365 / Entra ID data source; audit records land in
+`msft_azure_ad_audit_raw` and sign-ins in `msft_azure_ad_raw`, with columns named after the Microsoft Graph
+`directoryAudit` and `signIn` resources (`activityDisplayName`, `initiatedBy`, `targetResources`, `appId`,
+`ipAddress`...). If you ingest through Event Hub instead (`msft_azure_raw`), the same values sit under
+`properties.*`: change the `alter` lines. In Splunk, the Splunk Add-on for Microsoft Cloud Services writes
+`azure:monitor:aad`; define:
+
+```
+[azure_monitor_aad]
+definition = sourcetype=azure:monitor:aad
+```
+
+Export *ServicePrincipalSignInLogs* in the tenant's diagnostic settings as well as *AuditLogs*: app-only sign-ins are
+not in the normal sign-in log, and that is exactly where supply chain abuse shows up.
+
 **What has to be logged.** The Active Directory rules only see what Windows writes, so turn on: *Audit Directory Service Access*
 and *Directory Service Changes* on the DCs with a SACL on the domain root and AdminSDHolder (4662, 5136), *Kerberos Service Ticket
 Operations* and *Kerberos Authentication Service* (4768, 4769), *Security Group Management* (4728, 4732, 4756), *Certification
@@ -245,7 +266,7 @@ Copy any file in [`rules/`](rules), give it the next ID, and fill in:
 
 | Key | What goes in it |
 |---|---|
-| `logsource` | `process_creation`, `network_connection`, `dns_query`, `registry_set`, `file_event`, `windows_event`, `web_server_error` or `fortigate` |
+| `logsource` | `process_creation`, `network_connection`, `dns_query`, `registry_set`, `file_event`, `windows_event`, `web_server_error`, `fortigate`, `entra_audit` or `entra_sp_signin` |
 | `detection` | named selections plus a `condition` using `and`, `or`, `not` and parentheses |
 | field modifiers | none (equals), `contains`, `startswith`, `endswith`, `re`, `cidr`, and `all` to require every value |
 | `tests` | at least one `match` and one `no_match` event, using the same portable field names |
@@ -256,7 +277,7 @@ Field names per log source are in [`detlib/schema.py`](detlib/schema.py).
 
 ## How it is tested
 
-* **Reference matcher.** Each rule runs against its own events (`python -m detlib test`): 75 rules, 254 events.
+* **Reference matcher.** Each rule runs against its own events (`python -m detlib test`): 79 rules, 270 events.
 * **Compiled output, executed.** The test suite carries a small interpreter for the subset of XQL and SPL the
   compiler emits ([`tests/interp.py`](tests/interp.py)). Every test event is mapped to XDR and Sysmon column names
   and run through the *generated* query. Both must agree with the reference.

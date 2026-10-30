@@ -159,6 +159,12 @@
       "comment": "DL-0068, DL-0074"
     },
     {
+      "techniqueID": "T1078.004",
+      "score": 1,
+      "color": "",
+      "comment": "DL-0078"
+    },
+    {
       "techniqueID": "T1087.002",
       "score": 4,
       "color": "",
@@ -181,6 +187,18 @@
       "score": 11,
       "color": "",
       "comment": "DL-0034, DL-0037, DL-0041, DL-0045, DL-0052, DL-0053, DL-0054, DL-0055, DL-0056, DL-0059, DL-0069"
+    },
+    {
+      "techniqueID": "T1098.001",
+      "score": 1,
+      "color": "",
+      "comment": "DL-0077"
+    },
+    {
+      "techniqueID": "T1098.003",
+      "score": 2,
+      "color": "",
+      "comment": "DL-0076, DL-0079"
     },
     {
       "techniqueID": "T1098.007",
@@ -261,6 +279,18 @@
       "comment": "DL-0063, DL-0066, DL-0067, DL-0068"
     },
     {
+      "techniqueID": "T1195",
+      "score": 1,
+      "color": "",
+      "comment": "DL-0078"
+    },
+    {
+      "techniqueID": "T1199",
+      "score": 1,
+      "color": "",
+      "comment": "DL-0078"
+    },
+    {
       "techniqueID": "T1204.002",
       "score": 1,
       "color": "",
@@ -325,6 +355,12 @@
       "score": 2,
       "color": "",
       "comment": "DL-0063, DL-0065"
+    },
+    {
+      "techniqueID": "T1528",
+      "score": 1,
+      "color": "",
+      "comment": "DL-0079"
     },
     {
       "techniqueID": "T1543.003",

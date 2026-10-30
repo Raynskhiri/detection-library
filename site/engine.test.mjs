@@ -78,6 +78,30 @@ test("a pasted FortiGate log line is parsed and matched", () => {
   assert.deepEqual(evaluate(rules, p.logsource, p.event).map((r) => r.id), ["DL-0069"]);
 });
 
+test("a pasted Entra ID audit record (Graph directoryAudit) is parsed and matched", () => {
+  const audit = {
+    activityDisplayName: "Add member to role", category: "RoleManagement", result: "success",
+    initiatedBy: { app: { appId: "24205314-2b89-4e07-a2a4-579e898a5640", displayName: "ConnectWise Cloud Management - MS Teams" } },
+    targetResources: [{ type: "ServicePrincipal", displayName: "ConnectWise Cloud Management - MS Teams",
+      modifiedProperties: [{ displayName: "Role.DisplayName", newValue: "\"Global Administrator\"" }] }],
+    additionalDetails: [{ key: "User-Agent", value: "Python-urllib/3.12" }],
+  };
+  const p = autoParse(JSON.stringify(audit), fieldNames);
+  assert.equal(p.logsource, "entra_audit");
+  assert.equal(p.event["initiator.app"], "ConnectWise Cloud Management - MS Teams");
+  assert.deepEqual(evaluate(rules, p.logsource, p.event).map((r) => r.id), ["DL-0076"]);
+});
+
+test("a pasted Entra ID service principal sign-in (Azure Monitor) is parsed and matched", () => {
+  const signin = { category: "ServicePrincipalSignInLogs", callerIpAddress: "144.172.64.128",
+    properties: { appId: "506e08f9-6e9a-4da4-942b-a099a03644ae", appDisplayName: "ConnectWise Cloud Backup",
+      ipAddress: "144.172.64.128", resourceDisplayName: "Microsoft Graph", status: { errorCode: 0 } } };
+  const p = autoParse(JSON.stringify(signin), fieldNames);
+  assert.equal(p.logsource, "entra_sp_signin");
+  assert.equal(p.event["signin.error_code"], "0");
+  assert.deepEqual(evaluate(rules, p.logsource, p.event).map((r) => r.id), ["DL-0078"]);
+});
+
 test("unsupported Sysmon event id gives a clear error", () => {
   assert.throws(() => parseSysmonXml("<Event><System><EventID>4</EventID></System></Event>"), /not covered/);
 });

@@ -6412,6 +6412,457 @@
      }
     ]
    }
+  },
+  {
+   "id": "DL-0076",
+   "title": "Privileged Entra ID role given to a service principal by an application",
+   "description": "\"Add member to role\" where the target is a service principal, the role is privileged (Global Administrator, Privileged Role Administrator, Application or Cloud Application Administrator, Exchange Administrator...) and the change was made by an application, not a person. In the October 2026 ConnectWise supply chain compromise (Storm-0940), ConnectWise Cloud Management service principals added themselves to Exchange Administrator in about fifty tenants and, in one, to Global Administrator, five minutes before planting secrets in other apps. Humans assign roles through the portal; an app granting roles to an app is the attacker using permissions such as RoleManagement.ReadWrite.Directory that a vendor was trusted with.",
+   "attack": [
+    "T1098.003"
+   ],
+   "tactic": "privilege-escalation",
+   "severity": "critical",
+   "logsource": "entra_audit",
+   "selections": {
+    "role_added": [
+     {
+      "field": "audit.operation",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "Add member to role",
+       "Add eligible member to role"
+      ]
+     },
+     {
+      "field": "target.type",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "ServicePrincipal"
+      ]
+     }
+    ],
+    "by_an_app": [
+     {
+      "field": "initiator.app",
+      "op": "re",
+      "all": false,
+      "values": [
+       ".+"
+      ]
+     }
+    ],
+    "privileged_role": [
+     {
+      "field": "target.details",
+      "op": "contains",
+      "all": false,
+      "values": [
+       "Global Administrator",
+       "Company Administrator",
+       "Privileged Role Administrator",
+       "Privileged Authentication Administrator",
+       "Application Administrator",
+       "Cloud Application Administrator",
+       "Exchange Administrator",
+       "SharePoint Administrator",
+       "Security Administrator",
+       "Hybrid Identity Administrator",
+       "User Administrator",
+       "Partner Tier2 Support",
+       "Directory Writers"
+      ]
+     }
+    ]
+   },
+   "condition": {
+    "and": [
+     {
+      "and": [
+       {
+        "sel": "role_added"
+       },
+       {
+        "sel": "by_an_app"
+       }
+      ]
+     },
+     {
+      "sel": "privileged_role"
+     }
+    ]
+   },
+   "condition_text": "role_added and by_an_app and privileged_role",
+   "triage": [
+    "Compare initiator.app with target.name. The same app on both sides is a self-assignment, the exact Storm-0940 pattern, and should be treated as an active intrusion.",
+    "Look at what the service principal did in the next hour, above all new credentials on other apps (DL-0077) and new high-privilege Graph permissions (DL-0079).",
+    "Remove the role, disable the service principal (do not delete it, you need its configuration as evidence) and revoke its credentials. Existing app tokens stay valid until they expire, up to about 90 minutes."
+   ],
+   "false_positives": [
+    "Identity governance or PIM automation that assigns roles through its own service principal. It uses one known app and a ticketed workflow."
+   ],
+   "xql": "config case_sensitive = false\n| dataset = msft_azure_ad_audit_raw\n| filter activityDisplayName != null\n| alter aud_operation = activityDisplayName, aud_initiator_app = json_extract_scalar(initiatedBy, \"$.app.displayName\"), aud_initiator_user = json_extract_scalar(initiatedBy, \"$.user.userPrincipalName\"), aud_target_type = json_extract_scalar(targetResources, \"$[0].type\"), aud_target_name = json_extract_scalar(targetResources, \"$[0].displayName\"), aud_targets = to_string(targetResources), aud_user_agent = arrayindex(regextract(to_string(additionalDetails), \"User-Agent\\\\\\\",\\\\\\\"value\\\\\\\":\\\\\\\"([^\\\\\\\"]*)\"), 0)\n| filter ((aud_operation in (\"add member to role\", \"add eligible member to role\") and aud_target_type = \"serviceprincipal\") and aud_initiator_app ~= \"(?i).+\") and (aud_targets contains \"Global Administrator\" or aud_targets contains \"Company Administrator\" or aud_targets contains \"Privileged Role Administrator\" or aud_targets contains \"Privileged Authentication Administrator\" or aud_targets contains \"Application Administrator\" or aud_targets contains \"Cloud Application Administrator\" or aud_targets contains \"Exchange Administrator\" or aud_targets contains \"SharePoint Administrator\" or aud_targets contains \"Security Administrator\" or aud_targets contains \"Hybrid Identity Administrator\" or aud_targets contains \"User Administrator\" or aud_targets contains \"Partner Tier2 Support\" or aud_targets contains \"Directory Writers\")\n| fields _time, aud_operation, aud_initiator_app, aud_initiator_user, aud_target_type, aud_target_name, aud_user_agent, aud_targets\n| sort desc _time\n| limit 1000\n",
+   "spl": "`azure_monitor_aad` category=AuditLogs\n| eval aud_operation=operationName, aud_category=category, aud_result='properties.result', aud_initiator_app='properties.initiatedBy.app.displayName', aud_initiator_app_id='properties.initiatedBy.app.appId', aud_initiator_user='properties.initiatedBy.user.userPrincipalName', aud_target_type=mvindex('properties.targetResources{}.type',0), aud_target_name=mvindex('properties.targetResources{}.displayName',0), aud_targets=mvjoin(mvappend('properties.targetResources{}.displayName','properties.targetResources{}.modifiedProperties{}.newValue'),\" | \"), aud_user_agent=mvindex('properties.additionalDetails{}.value',mvfind('properties.additionalDetails{}.key',\"User-Agent\"))\n| where (((lower(aud_operation)=\"add member to role\" OR lower(aud_operation)=\"add eligible member to role\") AND lower(aud_target_type)=\"serviceprincipal\") AND match(aud_initiator_app, \"(?i).+\")) AND (match(aud_targets, \"(?i)Global\\\\ Administrator\") OR match(aud_targets, \"(?i)Company\\\\ Administrator\") OR match(aud_targets, \"(?i)Privileged\\\\ Role\\\\ Administrator\") OR match(aud_targets, \"(?i)Privileged\\\\ Authentication\\\\ Administrator\") OR match(aud_targets, \"(?i)Application\\\\ Administrator\") OR match(aud_targets, \"(?i)Cloud\\\\ Application\\\\ Administrator\") OR match(aud_targets, \"(?i)Exchange\\\\ Administrator\") OR match(aud_targets, \"(?i)SharePoint\\\\ Administrator\") OR match(aud_targets, \"(?i)Security\\\\ Administrator\") OR match(aud_targets, \"(?i)Hybrid\\\\ Identity\\\\ Administrator\") OR match(aud_targets, \"(?i)User\\\\ Administrator\") OR match(aud_targets, \"(?i)Partner\\\\ Tier2\\\\ Support\") OR match(aud_targets, \"(?i)Directory\\\\ Writers\"))\n| table _time aud_operation aud_initiator_app aud_initiator_user aud_target_type aud_target_name aud_user_agent aud_targets\n| sort - _time\n",
+   "tests": {
+    "match": [
+     {
+      "audit.operation": "Add member to role",
+      "audit.category": "RoleManagement",
+      "audit.result": "success",
+      "initiator.app": "ConnectWise Cloud Management - MS Teams",
+      "initiator.app_id": "24205314-2b89-4e07-a2a4-579e898a5640",
+      "target.type": "ServicePrincipal",
+      "target.name": "ConnectWise Cloud Management - MS Teams",
+      "target.details": "[\"ConnectWise Cloud Management - MS Teams\", \"\\\"62e90394-69f5-4237-9190-012177145e10\\\"\", \"\\\"Global Administrator\\\"\"]"
+     },
+     {
+      "audit.operation": "Add member to role",
+      "audit.category": "RoleManagement",
+      "initiator.app": "ConnectWise Cloud Management - Exchange Online",
+      "target.type": "ServicePrincipal",
+      "target.name": "ConnectWise Cloud Management - Exchange Online",
+      "target.details": "\"Exchange Administrator\""
+     }
+    ],
+    "no_match": [
+     {
+      "audit.operation": "Add member to role",
+      "audit.category": "RoleManagement",
+      "initiator.user": "it.admin@contoso.tn",
+      "target.type": "ServicePrincipal",
+      "target.name": "Backup Connector",
+      "target.details": "\"Exchange Administrator\""
+     },
+     {
+      "audit.operation": "Add member to role",
+      "initiator.app": "Lifecycle Workflows",
+      "target.type": "User",
+      "target.name": "s.benali@contoso.tn",
+      "target.details": "\"Helpdesk Administrator\""
+     }
+    ]
+   }
+  },
+  {
+   "id": "DL-0077",
+   "title": "Secret or certificate added to an Entra ID app by another app or by a script",
+   "description": "A client secret or certificate was added to an application or service principal (\"Add service principal credentials\", or \"Update application - Certificates and secrets management\"), and the change came from an application rather than a person, or from a scripting client (python-requests, Python-urllib, curl). A credential on an app is a backdoor that survives password resets, MFA and the vendor fixing its own breach. In the October 2026 ConnectWise compromise, a Python script added new secrets to an MSP management app and to a security vendor's app minutes after taking Global Administrator.",
+   "attack": [
+    "T1098.001"
+   ],
+   "tactic": "persistence",
+   "severity": "high",
+   "logsource": "entra_audit",
+   "selections": {
+    "credential_added": [
+     {
+      "field": "audit.operation",
+      "op": "re",
+      "all": false,
+      "values": [
+       "^(add service principal credentials|update application.*certificates and secrets)"
+      ]
+     }
+    ],
+    "by_an_app": [
+     {
+      "field": "initiator.app",
+      "op": "re",
+      "all": false,
+      "values": [
+       ".+"
+      ]
+     }
+    ],
+    "scripted": [
+     {
+      "field": "user_agent",
+      "op": "re",
+      "all": false,
+      "values": [
+       "(python-requests|python-urllib|curl/|go-http-client|azure-toolkit)"
+      ]
+     }
+    ]
+   },
+   "condition": {
+    "and": [
+     {
+      "sel": "credential_added"
+     },
+     {
+      "or": [
+       {
+        "sel": "by_an_app"
+       },
+       {
+        "sel": "scripted"
+       }
+      ]
+     }
+    ]
+   },
+   "condition_text": "credential_added and (by_an_app or scripted)",
+   "triage": [
+    "Open the target app's credentials and note the key ID, type, start and end dates. Attackers often pick long lifetimes; reporting on this campaign called out new secrets that expire in 2028.",
+    "Check whether the initiating app recently gained a directory role (DL-0076). Self-assigned role then new secrets is the full Storm-0940 chain.",
+    "Remove the credential, then review every sign-in by the target app since the credential was created. Removing it does not undo what was already read."
+   ],
+   "false_positives": [
+    "Secret rotation done by your own automation (Key Vault rotation, Terraform or a DevOps service principal). Allow-list that app by ID, not by name."
+   ],
+   "xql": "config case_sensitive = false\n| dataset = msft_azure_ad_audit_raw\n| filter activityDisplayName != null\n| alter aud_operation = activityDisplayName, aud_initiator_app = json_extract_scalar(initiatedBy, \"$.app.displayName\"), aud_initiator_user = json_extract_scalar(initiatedBy, \"$.user.userPrincipalName\"), aud_target_type = json_extract_scalar(targetResources, \"$[0].type\"), aud_target_name = json_extract_scalar(targetResources, \"$[0].displayName\"), aud_targets = to_string(targetResources), aud_user_agent = arrayindex(regextract(to_string(additionalDetails), \"User-Agent\\\\\\\",\\\\\\\"value\\\\\\\":\\\\\\\"([^\\\\\\\"]*)\"), 0)\n| filter aud_operation ~= \"(?i)^(add service principal credentials|update application.*certificates and secrets)\" and (aud_initiator_app ~= \"(?i).+\" or aud_user_agent ~= \"(?i)(python-requests|python-urllib|curl/|go-http-client|azure-toolkit)\")\n| fields _time, aud_operation, aud_initiator_app, aud_initiator_user, aud_target_type, aud_target_name, aud_user_agent, aud_targets\n| sort desc _time\n| limit 1000\n",
+   "spl": "`azure_monitor_aad` category=AuditLogs\n| eval aud_operation=operationName, aud_category=category, aud_result='properties.result', aud_initiator_app='properties.initiatedBy.app.displayName', aud_initiator_app_id='properties.initiatedBy.app.appId', aud_initiator_user='properties.initiatedBy.user.userPrincipalName', aud_target_type=mvindex('properties.targetResources{}.type',0), aud_target_name=mvindex('properties.targetResources{}.displayName',0), aud_targets=mvjoin(mvappend('properties.targetResources{}.displayName','properties.targetResources{}.modifiedProperties{}.newValue'),\" | \"), aud_user_agent=mvindex('properties.additionalDetails{}.value',mvfind('properties.additionalDetails{}.key',\"User-Agent\"))\n| where match(aud_operation, \"(?i)^(add service principal credentials|update application.*certificates and secrets)\") AND (match(aud_initiator_app, \"(?i).+\") OR match(aud_user_agent, \"(?i)(python-requests|python-urllib|curl/|go-http-client|azure-toolkit)\"))\n| table _time aud_operation aud_initiator_app aud_initiator_user aud_target_type aud_target_name aud_user_agent aud_targets\n| sort - _time\n",
+   "tests": {
+    "match": [
+     {
+      "audit.operation": "Add service principal credentials",
+      "audit.category": "ApplicationManagement",
+      "initiator.app": "ConnectWise Cloud Management - MS Teams",
+      "target.type": "ServicePrincipal",
+      "target.name": "Huntress Security Platform",
+      "user_agent": "Python-urllib/3.12"
+     },
+     {
+      "audit.operation": "Update application - Certificates and secrets management",
+      "audit.category": "ApplicationManagement",
+      "initiator.user": "compromised.admin@contoso.tn",
+      "target.type": "Application",
+      "target.name": "RMM Integration",
+      "user_agent": "python-requests/2.34.2"
+     }
+    ],
+    "no_match": [
+     {
+      "audit.operation": "Update application - Certificates and secrets management",
+      "audit.category": "ApplicationManagement",
+      "initiator.user": "it.admin@contoso.tn",
+      "target.type": "Application",
+      "target.name": "HR Portal",
+      "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/141.0 Safari/537.36"
+     },
+     {
+      "audit.operation": "Add service principal",
+      "initiator.app": "Microsoft Graph Command Line Tools",
+      "target.type": "ServicePrincipal",
+      "target.name": "New Partner App"
+     }
+    ]
+   }
+  },
+  {
+   "id": "DL-0078",
+   "title": "ConnectWise / SkyKick app signed in from a public IPv4 address or Storm-0940 infrastructure",
+   "description": "A service principal sign-in by one of the seven ConnectWise Cloud Backup / Cloud Management (formerly SkyKick) applications from a public IPv4 address. The real service signs in from Azure private IPv6 space, so an IPv4 source means someone else holds the app's credential. In October 2026, Storm-0940 used the stolen Cloud Backup credential from 144.172.64.128 to collect Graph tokens tenant after tenant, a few seconds apart, in GUID order. App-only sign-ins do not appear in the default \"User sign-ins\" view, which is how many tenants missed it. The same idea works for any multi-tenant vendor app you trust: learn where it normally signs in from and alert on anything else.",
+   "attack": [
+    "T1199",
+    "T1078.004",
+    "T1195"
+   ],
+   "tactic": "initial-access",
+   "severity": "high",
+   "logsource": "entra_sp_signin",
+   "selections": {
+    "connectwise_app": [
+     {
+      "field": "signin.app_id",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "506e08f9-6e9a-4da4-942b-a099a03644ae",
+       "2399d300-6fca-4e6a-a686-399fefe75b83",
+       "24205314-2b89-4e07-a2a4-579e898a5640",
+       "b78f6a77-d4e5-46fb-87e5-d1648bd02519",
+       "0de14c77-b9b0-4137-9360-34878a929827",
+       "412dcf96-176d-4b3a-a1b0-4981ad66971e",
+       "b2b55f5b-7758-4719-8d8f-88ae172e6bdb"
+      ]
+     }
+    ],
+    "ipv4": [
+     {
+      "field": "signin.ip",
+      "op": "re",
+      "all": false,
+      "values": [
+       "^\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}$"
+      ]
+     }
+    ],
+    "storm_0940_infra": [
+     {
+      "field": "signin.ip",
+      "op": "cidr",
+      "all": false,
+      "values": [
+       "144.172.64.0/24",
+       "187.15.88.0/22"
+      ]
+     }
+    ]
+   },
+   "condition": {
+    "and": [
+     {
+      "sel": "connectwise_app"
+     },
+     {
+      "or": [
+       {
+        "sel": "ipv4"
+       },
+       {
+        "sel": "storm_0940_infra"
+       }
+      ]
+     }
+    ]
+   },
+   "condition_text": "connectwise_app and (ipv4 or storm_0940_infra)",
+   "triage": [
+    "Check signin.error_code. 0 means a token was issued. Then pull the Graph activity and audit records for the same app after that time (DL-0076, DL-0077).",
+    "Keep the app disabled (\"Enabled for users to sign-in\" set to No, which also blocks app-only tokens). Do not delete it until evidence is preserved.",
+    "Remember that Graph directory reads may leave no audit record without Graph activity logs. No audit hits does not mean nothing was read."
+   ],
+   "false_positives": [
+    "ConnectWise moving part of the service to IPv4 egress after the incident. Check their restoration notes and update the rule with their published ranges."
+   ],
+   "xql": "config case_sensitive = false\n| dataset = msft_azure_ad_raw\n| filter appId != null\n| alter si_app_id = appId, si_app_name = appDisplayName, si_sp_name = servicePrincipalName, si_ip = ipAddress, si_user_agent = userAgent, si_resource = resourceDisplayName, si_error = json_extract_scalar(status, \"$.errorCode\")\n| filter si_app_id in (\"506e08f9-6e9a-4da4-942b-a099a03644ae\", \"2399d300-6fca-4e6a-a686-399fefe75b83\", \"24205314-2b89-4e07-a2a4-579e898a5640\", \"b78f6a77-d4e5-46fb-87e5-d1648bd02519\", \"0de14c77-b9b0-4137-9360-34878a929827\", \"412dcf96-176d-4b3a-a1b0-4981ad66971e\", \"b2b55f5b-7758-4719-8d8f-88ae172e6bdb\") and (si_ip ~= \"(?i)^\\\\d{1,3}\\\\.\\\\d{1,3}\\\\.\\\\d{1,3}\\\\.\\\\d{1,3}$\" or (incidr(si_ip, \"144.172.64.0/24\") or incidr(si_ip, \"187.15.88.0/22\")))\n| fields _time, si_app_name, si_app_id, si_sp_name, si_ip, si_user_agent, si_resource, si_error\n| sort desc _time\n| limit 1000\n",
+   "spl": "`azure_monitor_aad` category=ServicePrincipalSignInLogs\n| eval si_app_id='properties.appId', si_app_name='properties.appDisplayName', si_sp_name='properties.servicePrincipalName', si_ip=coalesce('properties.ipAddress',callerIpAddress), si_user_agent='properties.userAgent', si_resource='properties.resourceDisplayName', si_error='properties.status.errorCode', si_event_types=category\n| where (lower(si_app_id)=\"506e08f9-6e9a-4da4-942b-a099a03644ae\" OR lower(si_app_id)=\"2399d300-6fca-4e6a-a686-399fefe75b83\" OR lower(si_app_id)=\"24205314-2b89-4e07-a2a4-579e898a5640\" OR lower(si_app_id)=\"b78f6a77-d4e5-46fb-87e5-d1648bd02519\" OR lower(si_app_id)=\"0de14c77-b9b0-4137-9360-34878a929827\" OR lower(si_app_id)=\"412dcf96-176d-4b3a-a1b0-4981ad66971e\" OR lower(si_app_id)=\"b2b55f5b-7758-4719-8d8f-88ae172e6bdb\") AND (match(si_ip, \"(?i)^\\\\d{1,3}\\\\.\\\\d{1,3}\\\\.\\\\d{1,3}\\\\.\\\\d{1,3}$\") OR (cidrmatch(\"144.172.64.0/24\", si_ip) OR cidrmatch(\"187.15.88.0/22\", si_ip)))\n| table _time si_app_name si_app_id si_sp_name si_ip si_user_agent si_resource si_error\n| sort - _time\n",
+   "tests": {
+    "match": [
+     {
+      "signin.app_id": "506e08f9-6e9a-4da4-942b-a099a03644ae",
+      "signin.app_name": "ConnectWise Cloud Backup",
+      "signin.ip": "144.172.64.128",
+      "signin.resource": "Microsoft Graph",
+      "signin.error_code": "0",
+      "user_agent": "curl/7.88.1"
+     },
+     {
+      "signin.app_id": "24205314-2b89-4e07-a2a4-579e898a5640",
+      "signin.app_name": "ConnectWise Cloud Management - MS Teams",
+      "signin.ip": "198.51.100.77",
+      "signin.resource": "Microsoft Graph",
+      "signin.error_code": "0"
+     }
+    ],
+    "no_match": [
+     {
+      "signin.app_id": "506e08f9-6e9a-4da4-942b-a099a03644ae",
+      "signin.app_name": "ConnectWise Cloud Backup",
+      "signin.ip": "fd00:a1b2:c3d4::15",
+      "signin.resource": "Office 365 Exchange Online",
+      "signin.error_code": "0"
+     },
+     {
+      "signin.app_id": "1950a258-227b-4e31-a9cf-717495945fc2",
+      "signin.app_name": "Microsoft Azure PowerShell",
+      "signin.ip": "144.172.64.128",
+      "signin.error_code": "50126"
+     }
+    ]
+   }
+  },
+  {
+   "id": "DL-0079",
+   "title": "Tenant-wide Microsoft Graph or Exchange permission granted to an app",
+   "description": "\"Add app role assignment to service principal\" (application permission, admin consent) for a permission that controls the whole tenant: RoleManagement.ReadWrite.Directory, AppRoleAssignment.ReadWrite.All, Application.ReadWrite.All, Directory.ReadWrite.All, Mail.ReadWrite / Mail.Read, Files.ReadWrite.All, Sites.FullControl.All or Exchange full_access_as_app. With any of the first three an app can promote itself to Global Administrator; Microsoft assessed that Storm-0940 likely abused Directory.ReadWrite.All granted to the ConnectWise apps. Granting these should be rare and always reviewed, and an app granting them to an app is how attackers widen their own access.",
+   "attack": [
+    "T1098.003",
+    "T1528"
+   ],
+   "tactic": "privilege-escalation",
+   "severity": "high",
+   "logsource": "entra_audit",
+   "selections": {
+    "app_role_assignment": [
+     {
+      "field": "audit.operation",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "Add app role assignment to service principal",
+       "Add app role assignment grant to user",
+       "Consent to application"
+      ]
+     }
+    ],
+    "dangerous_permission": [
+     {
+      "field": "target.details",
+      "op": "contains",
+      "all": false,
+      "values": [
+       "RoleManagement.ReadWrite.Directory",
+       "AppRoleAssignment.ReadWrite.All",
+       "Application.ReadWrite.All",
+       "Directory.ReadWrite.All",
+       "Mail.ReadWrite",
+       "Mail.Read",
+       "Files.ReadWrite.All",
+       "Sites.FullControl.All",
+       "full_access_as_app"
+      ]
+     }
+    ]
+   },
+   "condition": {
+    "and": [
+     {
+      "sel": "app_role_assignment"
+     },
+     {
+      "sel": "dangerous_permission"
+     }
+    ]
+   },
+   "condition_text": "app_role_assignment and dangerous_permission",
+   "triage": [
+    "Who granted it (initiator.user or initiator.app) and to which app (target.name)? A grant made by an app, or outside an onboarding ticket, is an escalation.",
+    "List everything that app can do now (Enterprise applications, Permissions) and check its sign-ins since the grant (DL-0078 pattern).",
+    "Remove the assignment and revoke the app's credentials if nobody owns the change."
+   ],
+   "false_positives": [
+    "Onboarding a new backup, security or migration vendor. These tools really need broad rights. Record the app ID and the business owner when you approve it, then keep this rule for every grant after that."
+   ],
+   "xql": "config case_sensitive = false\n| dataset = msft_azure_ad_audit_raw\n| filter activityDisplayName != null\n| alter aud_operation = activityDisplayName, aud_initiator_app = json_extract_scalar(initiatedBy, \"$.app.displayName\"), aud_initiator_user = json_extract_scalar(initiatedBy, \"$.user.userPrincipalName\"), aud_target_type = json_extract_scalar(targetResources, \"$[0].type\"), aud_target_name = json_extract_scalar(targetResources, \"$[0].displayName\"), aud_targets = to_string(targetResources), aud_user_agent = arrayindex(regextract(to_string(additionalDetails), \"User-Agent\\\\\\\",\\\\\\\"value\\\\\\\":\\\\\\\"([^\\\\\\\"]*)\"), 0)\n| filter aud_operation in (\"add app role assignment to service principal\", \"add app role assignment grant to user\", \"consent to application\") and (aud_targets contains \"RoleManagement.ReadWrite.Directory\" or aud_targets contains \"AppRoleAssignment.ReadWrite.All\" or aud_targets contains \"Application.ReadWrite.All\" or aud_targets contains \"Directory.ReadWrite.All\" or aud_targets contains \"Mail.ReadWrite\" or aud_targets contains \"Mail.Read\" or aud_targets contains \"Files.ReadWrite.All\" or aud_targets contains \"Sites.FullControl.All\" or aud_targets contains \"full_access_as_app\")\n| fields _time, aud_operation, aud_initiator_app, aud_initiator_user, aud_target_type, aud_target_name, aud_user_agent, aud_targets\n| sort desc _time\n| limit 1000\n",
+   "spl": "`azure_monitor_aad` category=AuditLogs\n| eval aud_operation=operationName, aud_category=category, aud_result='properties.result', aud_initiator_app='properties.initiatedBy.app.displayName', aud_initiator_app_id='properties.initiatedBy.app.appId', aud_initiator_user='properties.initiatedBy.user.userPrincipalName', aud_target_type=mvindex('properties.targetResources{}.type',0), aud_target_name=mvindex('properties.targetResources{}.displayName',0), aud_targets=mvjoin(mvappend('properties.targetResources{}.displayName','properties.targetResources{}.modifiedProperties{}.newValue'),\" | \"), aud_user_agent=mvindex('properties.additionalDetails{}.value',mvfind('properties.additionalDetails{}.key',\"User-Agent\"))\n| where (lower(aud_operation)=\"add app role assignment to service principal\" OR lower(aud_operation)=\"add app role assignment grant to user\" OR lower(aud_operation)=\"consent to application\") AND (match(aud_targets, \"(?i)RoleManagement\\\\.ReadWrite\\\\.Directory\") OR match(aud_targets, \"(?i)AppRoleAssignment\\\\.ReadWrite\\\\.All\") OR match(aud_targets, \"(?i)Application\\\\.ReadWrite\\\\.All\") OR match(aud_targets, \"(?i)Directory\\\\.ReadWrite\\\\.All\") OR match(aud_targets, \"(?i)Mail\\\\.ReadWrite\") OR match(aud_targets, \"(?i)Mail\\\\.Read\") OR match(aud_targets, \"(?i)Files\\\\.ReadWrite\\\\.All\") OR match(aud_targets, \"(?i)Sites\\\\.FullControl\\\\.All\") OR match(aud_targets, \"(?i)full_access_as_app\"))\n| table _time aud_operation aud_initiator_app aud_initiator_user aud_target_type aud_target_name aud_user_agent aud_targets\n| sort - _time\n",
+   "tests": {
+    "match": [
+     {
+      "audit.operation": "Add app role assignment to service principal",
+      "audit.category": "ApplicationManagement",
+      "initiator.app": "ConnectWise Cloud Management - MS Graph",
+      "target.type": "ServicePrincipal",
+      "target.name": "Microsoft Graph",
+      "target.details": "[\"Microsoft Graph\", \"\\\"RoleManagement.ReadWrite.Directory\\\"\", \"\\\"ConnectWise Cloud Management - MS Graph\\\"\"]"
+     },
+     {
+      "audit.operation": "Consent to application",
+      "initiator.user": "m.trabelsi@contoso.tn",
+      "target.type": "ServicePrincipal",
+      "target.name": "Mail Archiver Pro",
+      "target.details": "\"Mail.Read Mail.ReadWrite offline_access\""
+     }
+    ],
+    "no_match": [
+     {
+      "audit.operation": "Add app role assignment to service principal",
+      "initiator.user": "it.admin@contoso.tn",
+      "target.type": "ServicePrincipal",
+      "target.name": "Microsoft Graph",
+      "target.details": "[\"Microsoft Graph\", \"\\\"User.Read.All\\\"\"]"
+     },
+     {
+      "audit.operation": "Add member to role",
+      "initiator.app": "ConnectWise Cloud Management - MS Graph",
+      "target.type": "ServicePrincipal",
+      "target.details": "\"Directory.ReadWrite.All\""
+     }
+    ]
+   }
   }
  ],
  "logsources": {
@@ -6500,6 +6951,34 @@
     "fg.type",
     "fg.ui",
     "fg.user"
+   ]
+  },
+  "entra_audit": {
+   "description": "A Microsoft Entra ID audit log record: role assignments, app credentials, consent, directory changes (XDR dataset msft_azure_ad_audit_raw; Splunk azure:monitor:aad AuditLogs)",
+   "fields": [
+    "audit.category",
+    "audit.operation",
+    "audit.result",
+    "initiator.app",
+    "initiator.app_id",
+    "initiator.user",
+    "target.details",
+    "target.name",
+    "target.type",
+    "user_agent"
+   ]
+  },
+  "entra_sp_signin": {
+   "description": "A Microsoft Entra ID service principal (app-only) sign-in (XDR dataset msft_azure_ad_raw; Splunk azure:monitor:aad ServicePrincipalSignInLogs)",
+   "fields": [
+    "signin.app_id",
+    "signin.app_name",
+    "signin.error_code",
+    "signin.ip",
+    "signin.resource",
+    "signin.sp_name",
+    "signin.type",
+    "user_agent"
    ]
   },
   "windows_event": {
