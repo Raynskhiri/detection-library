@@ -1,0 +1,4 @@
+`fortigate`
+| where (((lower(subtype)="system" OR lower(subtype)="vpn") AND (lower(action)="login" OR lower(action)="tunnel-up" OR lower(action)="ssl-login")) AND (lower(user)="support" OR lower(user)="ssl-admin" OR lower(user)="backupadmin" OR lower(user)="backup" OR lower(user)="itadmin" OR lower(user)="secadmin" OR lower(user)="svcadmin" OR lower(user)="remoteadmin" OR lower(user)="adccount" OR lower(user)="audit" OR lower(user)="deploy" OR lower(user)="security" OR lower(user)="helpdesk")) AND NOT ((isnotnull(status) AND (lower(status)="failed" OR lower(status)="failure")))
+| table _time devname logid user srcip ui logdesc msg
+| sort - _time

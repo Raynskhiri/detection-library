@@ -1,0 +1,4 @@
+`fortigate`
+| where (lower(cfgpath)="firewall.policy" AND (lower(action)="add" OR lower(action)="edit")) AND (match(cfgattr, "(?i)srcaddr\\[([^\\]]*->)?all\\]") AND match(cfgattr, "(?i)dstaddr\\[([^\\]]*->)?all\\]"))
+| table _time devname logid user srcip ui logdesc msg
+| sort - _time

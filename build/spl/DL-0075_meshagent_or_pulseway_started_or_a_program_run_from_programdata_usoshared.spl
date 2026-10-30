@@ -1,0 +1,5 @@
+`sysmon` EventCode=1
+| eval process_name=lower(mvindex(split(Image,"\\"),-1)), parent_name=lower(mvindex(split(ParentImage,"\\"),-1))
+| where (lower(process_name)="meshagent.exe" OR lower(process_name)="meshagent64.exe" OR lower(process_name)="pcmonitorsrv.exe" OR lower(process_name)="pcmonitormanager.exe" OR lower(process_name)="pulseway.exe") OR match(Image, "(?i)^c:\\\\programdata\\\\usoshared\\\\")
+| table _time host User ParentImage Image CommandLine
+| sort - _time

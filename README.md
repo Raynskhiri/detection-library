@@ -2,9 +2,10 @@
 
 <p align="center">
   <b>Write a detection once. Get Cortex XDR XQL and Splunk SPL. Prove it with test events.</b><br>
-  67 hunts for the things that actually show up in intrusions, from the first macro to deleted shadow copies:<br>
+  75 hunts for the things that actually show up in intrusions, from the first macro to deleted shadow copies:<br>
   full Active Directory attack coverage (Kerberos, delegation, ACL abuse, AD CS, DCSync, trusts, AMSI bypasses)<br>
-  and Linux web server exploitation such as PHP2Shell (CVE-2026-109618, CVE-2026-109619).<br>
+  Linux web server exploitation such as PHP2Shell (CVE-2026-109618, CVE-2026-109619)<br>
+  and FortiGate compromise you can catch with nothing but the firewall's own logs.<br>
   <b>Try them live: <a href="https://detections.rayenskhiri.online">detections.rayenskhiri.online</a></b>
 </p>
 
@@ -12,7 +13,7 @@
   <a href="https://github.com/Raynskhiri/detection-library/actions/workflows/tests.yml"><img src="https://github.com/Raynskhiri/detection-library/actions/workflows/tests.yml/badge.svg" alt="Tests"></a>
   <a href="https://github.com/Raynskhiri/detection-library/actions/workflows/security.yml"><img src="https://github.com/Raynskhiri/detection-library/actions/workflows/security.yml/badge.svg" alt="Security"></a>
   <a href="https://github.com/Raynskhiri/detection-library/releases/tag/latest"><img src="https://img.shields.io/badge/download-query%20packs-FF6B1A" alt="Query packs"></a>
-  <img src="https://img.shields.io/badge/rules-67-F97316" alt="67 rules">
+  <img src="https://img.shields.io/badge/rules-75-F97316" alt="75 rules">
   <img src="https://img.shields.io/badge/output-Cortex%20XQL%20%7C%20Splunk%20SPL-FA582D" alt="XQL and SPL">
   <img src="https://img.shields.io/badge/mapped%20to-MITRE%20ATT%26CK-C8102E" alt="MITRE ATT&CK">
   <img src="https://img.shields.io/badge/python-3.10%2B-3776AB?logo=python&logoColor=white" alt="Python 3.10+">
@@ -102,6 +103,8 @@ and
 | [DL-0063](docs/rules/DL-0063.md) | Web server or PHP worker starts a shell or download tool (Linux) | T1190, T1059.004, T1505.003 | initial-access | high |
 | [DL-0066](docs/rules/DL-0066.md) | PHP ran out of memory before any script line ran (PHP2Shell probe) | T1190 | initial-access | medium |
 | [DL-0067](docs/rules/DL-0067.md) | Web server or PHP-FPM worker crashed with a segmentation fault | T1190 | initial-access | medium |
+| [DL-0068](docs/rules/DL-0068.md) | FortiGate admin login through FortiCloud SSO or from an internet address | T1190, T1078 | initial-access | high |
+| [DL-0074](docs/rules/DL-0074.md) | Admin or SSL VPN login with an account name used in FortiGate intrusions | T1078, T1133 | initial-access | medium |
 | [DL-0001](docs/rules/DL-0001.md) | PowerShell with an encoded command | T1059.001, T1027 | execution | high |
 | [DL-0002](docs/rules/DL-0002.md) | PowerShell download cradle that runs what it fetched | T1059.001, T1105 | execution | high |
 | [DL-0003](docs/rules/DL-0003.md) | Office application starts a shell or script host | T1204.002, T1566.001 | execution | high |
@@ -124,6 +127,9 @@ and
 | [DL-0057](docs/rules/DL-0057.md) | Member added to a privileged domain group | T1098.007 | persistence | high |
 | [DL-0059](docs/rules/DL-0059.md) | DSRM administrator password changed | T1098 | persistence | high |
 | [DL-0065](docs/rules/DL-0065.md) | PHP file written in the web root by the web server or PHP worker | T1505.003 | persistence | medium |
+| [DL-0069](docs/rules/DL-0069.md) | New administrator account created on a FortiGate | T1136.001, T1098 | persistence | high |
+| [DL-0071](docs/rules/DL-0071.md) | FortiGate firewall policy set to accept any source to any destination | T1562.004, T1133 | persistence | high |
+| [DL-0073](docs/rules/DL-0073.md) | FortiGate automation stitch, action or auto-script created | T1053, T1059 | persistence | medium |
 | [DL-0034](docs/rules/DL-0034.md) | AD object rights or memberships changed with PowerView or StandIn | T1098 | privilege-escalation | high |
 | [DL-0038](docs/rules/DL-0038.md) | Service binary path changed with sc config | T1574.011, T1543.003 | privilege-escalation | high |
 | [DL-0051](docs/rules/DL-0051.md) | Service ticket issued through delegation (S4U2Proxy) | T1558, T1134.001 | privilege-escalation | low |
@@ -138,6 +144,7 @@ and
 | [DL-0040](docs/rules/DL-0040.md) | .NET profiler set to load a DLL (COR_PROFILER) | T1574.012, T1562.001 | defense-evasion | high |
 | [DL-0042](docs/rules/DL-0042.md) | LSA protection or credential caching weakened in the registry | T1562.001, T1003.001 | defense-evasion | high |
 | [DL-0043](docs/rules/DL-0043.md) | AMSI or ETW bypass in a PowerShell script block | T1562.001 | defense-evasion | high |
+| [DL-0072](docs/rules/DL-0072.md) | FortiGate log forwarding turned off or pointed somewhere else | T1562.006, T1562.008 | defense-evasion | high |
 | [DL-0016](docs/rules/DL-0016.md) | LSASS memory dumped with comsvcs.dll or ProcDump | T1003.001 | credential-access | critical |
 | [DL-0017](docs/rules/DL-0017.md) | SAM, SYSTEM, SECURITY hives or NTDS.dit copied for offline cracking | T1003.002, T1003.003, T1003.004 | credential-access | critical |
 | [DL-0018](docs/rules/DL-0018.md) | Kerberoasting or AS-REP roasting tool run | T1558.003, T1558.004 | credential-access | high |
@@ -151,6 +158,7 @@ and
 | [DL-0055](docs/rules/DL-0055.md) | Service principal name added to a user account (targeted Kerberoasting) | T1558.003, T1098 | credential-access | medium |
 | [DL-0061](docs/rules/DL-0061.md) | Certificate issued with a subject alternative name supplied in the request | T1649 | credential-access | high |
 | [DL-0062](docs/rules/DL-0062.md) | Remote access to the print spooler or EFS pipe (authentication coercion) | T1187 | credential-access | medium |
+| [DL-0070](docs/rules/DL-0070.md) | FortiGate configuration backed up or downloaded | T1552.001, T1005 | credential-access | high |
 | [DL-0020](docs/rules/DL-0020.md) | Domain admin groups, domain controllers or trusts enumerated with built-in tools | T1069.002, T1087.002, T1482, T1018 | discovery | medium |
 | [DL-0021](docs/rules/DL-0021.md) | BloodHound collector (SharpHound) run | T1087.002, T1069.002, T1482 | discovery | high |
 | [DL-0030](docs/rules/DL-0030.md) | PowerView or PowerSploit AD recon functions on the command line | T1087.002, T1069.002, T1482, T1135 | discovery | high |
@@ -164,6 +172,7 @@ and
 | [DL-0026](docs/rules/DL-0026.md) | Connection to common Tor ports from a non-Tor process | T1090.003 | command-and-control | medium |
 | [DL-0027](docs/rules/DL-0027.md) | Script host or LOLBin looks up a paste site, file drop or tunnel service | T1102, T1105, T1572 | command-and-control | medium |
 | [DL-0035](docs/rules/DL-0035.md) | netsh port proxy set up to forward traffic | T1090.001 | command-and-control | medium |
+| [DL-0075](docs/rules/DL-0075.md) | MeshAgent or Pulseway started, or a program run from ProgramData\USOShared | T1219, T1036.005 | command-and-control | high |
 | [DL-0028](docs/rules/DL-0028.md) | rclone copies data to a remote | T1567.002, T1048 | exfiltration | high |
 | [DL-0029](docs/rules/DL-0029.md) | Shadow copies, backups or boot recovery removed | T1490 | impact | critical |
 <!-- rules:end -->
@@ -203,6 +212,18 @@ In Cortex XDR they read the Apache error log sent with an XDR Collector or a bro
 If your dataset has another name, change the `dataset =` line. Linux process and file rules use the XDR agent's normal
 telemetry (`xdr_data`) and, in Splunk, Sysmon for Linux.
 
+The FortiGate rules (DL-0068 to DL-0074) need only the firewall's own syslog. In Cortex XDR, point the FortiGate at a
+Broker VM syslog applet; the logs land in `fortinet_fortigate_raw` and the queries pull each field out of `_raw_log`, so
+they work with or without the Fortinet parser. In Splunk, install the Fortinet FortiGate Add-on and define:
+
+```
+[fortigate]
+definition = index=network sourcetype=fortigate_event OR sourcetype=fortigate_traffic
+```
+
+Keep the system event log on and keep at least 60 days of it: in the 2026 campaigns, short retention is why responders
+could not find how the attackers got in.
+
 **What has to be logged.** The Active Directory rules only see what Windows writes, so turn on: *Audit Directory Service Access*
 and *Directory Service Changes* on the DCs with a SACL on the domain root and AdminSDHolder (4662, 5136), *Kerberos Service Ticket
 Operations* and *Kerberos Authentication Service* (4768, 4769), *Security Group Management* (4728, 4732, 4756), *Certification
@@ -224,7 +245,7 @@ Copy any file in [`rules/`](rules), give it the next ID, and fill in:
 
 | Key | What goes in it |
 |---|---|
-| `logsource` | `process_creation`, `network_connection`, `dns_query`, `registry_set`, `file_event`, `windows_event` or `web_server_error` |
+| `logsource` | `process_creation`, `network_connection`, `dns_query`, `registry_set`, `file_event`, `windows_event`, `web_server_error` or `fortigate` |
 | `detection` | named selections plus a `condition` using `and`, `or`, `not` and parentheses |
 | field modifiers | none (equals), `contains`, `startswith`, `endswith`, `re`, `cidr`, and `all` to require every value |
 | `tests` | at least one `match` and one `no_match` event, using the same portable field names |
@@ -235,7 +256,7 @@ Field names per log source are in [`detlib/schema.py`](detlib/schema.py).
 
 ## How it is tested
 
-* **Reference matcher.** Each rule runs against its own events (`python -m detlib test`): 67 rules, 221 events.
+* **Reference matcher.** Each rule runs against its own events (`python -m detlib test`): 75 rules, 254 events.
 * **Compiled output, executed.** The test suite carries a small interpreter for the subset of XQL and SPL the
   compiler emits ([`tests/interp.py`](tests/interp.py)). Every test event is mapped to XDR and Sysmon column names
   and run through the *generated* query. Both must agree with the reference.

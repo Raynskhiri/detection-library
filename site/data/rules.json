@@ -5561,6 +5561,857 @@
      }
     ]
    }
+  },
+  {
+   "id": "DL-0068",
+   "title": "FortiGate admin login through FortiCloud SSO or from an internet address",
+   "description": "A successful administrator login on a FortiGate that used FortiCloud SSO, or that came from an address outside RFC 1918. The 2026 FortiGate campaigns (CVE-2025-59718, CVE-2025-59719, CVE-2026-24858) all start this way: a crafted SAML login or an attacker's own FortiCloud account gives admin access in seconds, from the internet. Needs only the FortiGate event log, so it works for clients that send nothing else.",
+   "attack": [
+    "T1190",
+    "T1078"
+   ],
+   "tactic": "initial-access",
+   "severity": "high",
+   "logsource": "fortigate",
+   "selections": {
+    "admin_login_ok": [
+     {
+      "field": "fg.subtype",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "system"
+      ]
+     },
+     {
+      "field": "fg.action",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "login"
+      ]
+     },
+     {
+      "field": "fg.status",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "success"
+      ]
+     }
+    ],
+    "sso": [
+     {
+      "field": "fg.method",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "sso"
+      ]
+     }
+    ],
+    "sso_ui": [
+     {
+      "field": "fg.ui",
+      "op": "startswith",
+      "all": false,
+      "values": [
+       "sso"
+      ]
+     }
+    ],
+    "internal_source": [
+     {
+      "field": "fg.srcip",
+      "op": "cidr",
+      "all": false,
+      "values": [
+       "10.0.0.0/8",
+       "172.16.0.0/12",
+       "192.168.0.0/16",
+       "127.0.0.0/8"
+      ]
+     }
+    ]
+   },
+   "condition": {
+    "and": [
+     {
+      "sel": "admin_login_ok"
+     },
+     {
+      "or": [
+       {
+        "or": [
+         {
+          "sel": "sso"
+         },
+         {
+          "sel": "sso_ui"
+         }
+        ]
+       },
+       {
+        "not": {
+         "sel": "internal_source"
+        }
+       }
+      ]
+     }
+    ]
+   },
+   "condition_text": "admin_login_ok and (sso or sso_ui or not internal_source)",
+   "triage": [
+    "Check the source IP against the IOCs in the Fortinet advisories (FG-IR-26-060) and look at what the session did next. Config download (DL-0070), new admin (DL-0069) or a permissive policy (DL-0071) within minutes means compromise.",
+    "Confirm the firmware is patched and set admin-forticloud-sso-login to disable under config system global until it is.",
+    "Restrict the management interface to trusted hosts. An admin GUI reachable from the internet is the root problem."
+   ],
+   "false_positives": [
+    "Admins who really use FortiCloud SSO. List them and confirm each login with the person.",
+    "Management from a provider or MSSP public IP. Allow-list those exact addresses, never a whole range."
+   ],
+   "xql": "config case_sensitive = false\n| dataset = fortinet_fortigate_raw\n| filter _raw_log != null\n| alter fg_logid = arrayindex(regextract(_raw_log, \"\\\\blogid=\\\"?([^\\\"\\\\s]*)\"), 0), fg_subtype = arrayindex(regextract(_raw_log, \"\\\\bsubtype=\\\"?([^\\\"\\\\s]*)\"), 0), fg_action = arrayindex(regextract(_raw_log, \"\\\\baction=\\\"?([^\\\"\\\\s]*)\"), 0), fg_status = arrayindex(regextract(_raw_log, \"\\\\bstatus=\\\"?([^\\\"\\\\s]*)\"), 0), fg_user = arrayindex(regextract(_raw_log, \"\\\\buser=\\\"?([^\\\"\\\\s]*)\"), 0), fg_srcip = arrayindex(regextract(_raw_log, \"\\\\bsrcip=\\\"?([^\\\"\\\\s]*)\"), 0), fg_ui = arrayindex(regextract(_raw_log, \"\\\\bui=\\\"?([^\\\"\\\\s]*)\"), 0), fg_method = arrayindex(regextract(_raw_log, \"\\\\bmethod=\\\"?([^\\\"\\\\s]*)\"), 0), fg_devname = arrayindex(regextract(_raw_log, \"\\\\bdevname=\\\"?([^\\\"\\\\s]*)\"), 0), fg_logdesc = arrayindex(regextract(_raw_log, \"\\\\blogdesc=\\\"([^\\\"]*)\\\"\"), 0), fg_msg = arrayindex(regextract(_raw_log, \"\\\\bmsg=\\\"([^\\\"]*)\\\"\"), 0)\n| filter (fg_subtype = \"system\" and fg_action = \"login\" and fg_status = \"success\") and ((fg_method = \"sso\" or fg_ui ~= \"(?i)^sso\") or not ((fg_srcip != null and (incidr(fg_srcip, \"10.0.0.0/8\") or incidr(fg_srcip, \"172.16.0.0/12\") or incidr(fg_srcip, \"192.168.0.0/16\") or incidr(fg_srcip, \"127.0.0.0/8\")))))\n| fields _time, fg_devname, fg_logid, fg_user, fg_srcip, fg_ui, fg_logdesc, fg_msg\n| sort desc _time\n| limit 1000\n",
+   "spl": "`fortigate`\n| where (lower(subtype)=\"system\" AND lower(action)=\"login\" AND lower(status)=\"success\") AND ((lower(method)=\"sso\" OR match(ui, \"(?i)^sso\")) OR NOT ((isnotnull(srcip) AND (cidrmatch(\"10.0.0.0/8\", srcip) OR cidrmatch(\"172.16.0.0/12\", srcip) OR cidrmatch(\"192.168.0.0/16\", srcip) OR cidrmatch(\"127.0.0.0/8\", srcip)))))\n| table _time devname logid user srcip ui logdesc msg\n| sort - _time\n",
+   "tests": {
+    "match": [
+     {
+      "fg.subtype": "system",
+      "fg.action": "login",
+      "fg.status": "success",
+      "fg.method": "sso",
+      "fg.user": "cloud-noc@mail.io",
+      "fg.srcip": "104.28.244.115",
+      "fg.ui": "sso(104.28.244.115)"
+     },
+     {
+      "fg.subtype": "system",
+      "fg.action": "login",
+      "fg.status": "success",
+      "fg.method": "https",
+      "fg.user": "admin",
+      "fg.srcip": "38.54.6.28",
+      "fg.ui": "https(38.54.6.28)"
+     }
+    ],
+    "no_match": [
+     {
+      "fg.subtype": "system",
+      "fg.action": "login",
+      "fg.status": "success",
+      "fg.method": "https",
+      "fg.user": "admin",
+      "fg.srcip": "10.20.0.15",
+      "fg.ui": "https(10.20.0.15)"
+     },
+     {
+      "fg.subtype": "system",
+      "fg.action": "login",
+      "fg.status": "failed",
+      "fg.method": "https",
+      "fg.user": "admin",
+      "fg.srcip": "45.148.10.200"
+     }
+    ]
+   }
+  },
+  {
+   "id": "DL-0069",
+   "title": "New administrator account created on a FortiGate",
+   "description": "An object was added under system.admin. Attackers who get into a FortiGate create their own admin, often with a generic name (support, ssl-admin, backup, itadmin, secadmin, svcadmin), so they keep access after the bug is patched. Admin accounts are created a few times a year, so every hit deserves a look. FortiGate event log only.",
+   "attack": [
+    "T1136.001",
+    "T1098"
+   ],
+   "tactic": "persistence",
+   "severity": "high",
+   "logsource": "fortigate",
+   "selections": {
+    "admin_added": [
+     {
+      "field": "fg.cfgpath",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "system.admin"
+      ]
+     },
+     {
+      "field": "fg.action",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "Add"
+      ]
+     }
+    ]
+   },
+   "condition": {
+    "sel": "admin_added"
+   },
+   "condition_text": "admin_added",
+   "triage": [
+    "Read who created it (user), from where (ui shows the method and IP) and when. A creator that logged in through SSO or from the internet (DL-0068) is a compromise until proven otherwise.",
+    "Check the new account's profile and trusted hosts, and whether it also got VPN access.",
+    "Some implants delete their admin after use, so look for an Add and a Delete of the same cfgobj close together."
+   ],
+   "false_positives": [
+    "A planned change by your own team. Match it to a change ticket and to the admin who made it (user and ui fields)."
+   ],
+   "xql": "config case_sensitive = false\n| dataset = fortinet_fortigate_raw\n| filter _raw_log != null\n| alter fg_logid = arrayindex(regextract(_raw_log, \"\\\\blogid=\\\"?([^\\\"\\\\s]*)\"), 0), fg_action = arrayindex(regextract(_raw_log, \"\\\\baction=\\\"?([^\\\"\\\\s]*)\"), 0), fg_user = arrayindex(regextract(_raw_log, \"\\\\buser=\\\"?([^\\\"\\\\s]*)\"), 0), fg_srcip = arrayindex(regextract(_raw_log, \"\\\\bsrcip=\\\"?([^\\\"\\\\s]*)\"), 0), fg_ui = arrayindex(regextract(_raw_log, \"\\\\bui=\\\"?([^\\\"\\\\s]*)\"), 0), fg_cfgpath = arrayindex(regextract(_raw_log, \"\\\\bcfgpath=\\\"?([^\\\"\\\\s]*)\"), 0), fg_devname = arrayindex(regextract(_raw_log, \"\\\\bdevname=\\\"?([^\\\"\\\\s]*)\"), 0), fg_logdesc = arrayindex(regextract(_raw_log, \"\\\\blogdesc=\\\"([^\\\"]*)\\\"\"), 0), fg_msg = arrayindex(regextract(_raw_log, \"\\\\bmsg=\\\"([^\\\"]*)\\\"\"), 0)\n| filter fg_cfgpath = \"system.admin\" and fg_action = \"add\"\n| fields _time, fg_devname, fg_logid, fg_user, fg_srcip, fg_ui, fg_logdesc, fg_msg\n| sort desc _time\n| limit 1000\n",
+   "spl": "`fortigate`\n| where lower(cfgpath)=\"system.admin\" AND lower(action)=\"add\"\n| table _time devname logid user srcip ui logdesc msg\n| sort - _time\n",
+   "tests": {
+    "match": [
+     {
+      "fg.subtype": "system",
+      "fg.logid": "0100044547",
+      "fg.cfgpath": "system.admin",
+      "fg.cfgobj": "support",
+      "fg.action": "Add",
+      "fg.user": "admin",
+      "fg.ui": "sso(104.28.244.115)"
+     },
+     {
+      "fg.subtype": "system",
+      "fg.logid": "0100044547",
+      "fg.cfgpath": "system.admin",
+      "fg.cfgobj": "ssl-admin",
+      "fg.action": "Add",
+      "fg.user": "admin",
+      "fg.ui": "GUI(10.20.0.15)"
+     }
+    ],
+    "no_match": [
+     {
+      "fg.subtype": "system",
+      "fg.logid": "0100044547",
+      "fg.cfgpath": "system.admin",
+      "fg.cfgobj": "admin",
+      "fg.action": "Edit",
+      "fg.cfgattr": "trusthost1[0.0.0.0 0.0.0.0->10.20.0.0 255.255.255.0]"
+     },
+     {
+      "fg.subtype": "system",
+      "fg.logid": "0100044547",
+      "fg.cfgpath": "user.local",
+      "fg.cfgobj": "s.benali",
+      "fg.action": "Add"
+     }
+    ]
+   }
+  },
+  {
+   "id": "DL-0070",
+   "title": "FortiGate configuration backed up or downloaded",
+   "description": "The full FortiGate configuration was exported. It holds the LDAP bind account, VPN and admin secrets protected with reversible encryption, plus the network map. In the 2026 campaigns, stealing it was the first thing attackers did, then they decrypted the LDAP service account and walked into Active Directory. FortiGate event log only. Message wording differs a little between FortiOS versions, so the rule matches on the description and the message text.",
+   "attack": [
+    "T1552.001",
+    "T1005"
+   ],
+   "tactic": "credential-access",
+   "severity": "high",
+   "logsource": "fortigate",
+   "selections": {
+    "system_event": [
+     {
+      "field": "fg.subtype",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "system"
+      ]
+     }
+    ],
+    "backup_text": [
+     {
+      "field": "fg.logdesc",
+      "op": "re",
+      "all": false,
+      "values": [
+       "(backup|back up|backed up|download).*(conf|configuration)|(conf|configuration).*(backup|backed up|download)"
+      ]
+     }
+    ],
+    "backup_msg": [
+     {
+      "field": "fg.msg",
+      "op": "re",
+      "all": false,
+      "values": [
+       "(backup|back up|backed up|download).*(conf|configuration)|(conf|configuration).*(backup|backed up|download)"
+      ]
+     }
+    ]
+   },
+   "condition": {
+    "and": [
+     {
+      "sel": "system_event"
+     },
+     {
+      "or": [
+       {
+        "sel": "backup_text"
+       },
+       {
+        "sel": "backup_msg"
+       }
+      ]
+     }
+    ]
+   },
+   "condition_text": "system_event and (backup_text or backup_msg)",
+   "triage": [
+    "Treat an export by an unexpected user, from an internet IP or right after a new admin (DL-0069) as a credential theft. Rotate every secret in the file - the LDAP or AD bind account first, then VPN pre-shared keys and local user passwords.",
+    "In AD, review logons by the FortiGate bind account from anywhere other than the FortiGate itself.",
+    "Exports from the CLI (show full-configuration in the GUI console) do not always log a backup event. Also look for ui=jsconsole sessions from unusual IPs."
+   ],
+   "false_positives": [
+    "Scheduled backups by FortiManager or a backup script. They come from one known IP at a fixed time.",
+    "An admin taking a backup before an upgrade. Match it to the change ticket."
+   ],
+   "xql": "config case_sensitive = false\n| dataset = fortinet_fortigate_raw\n| filter _raw_log != null\n| alter fg_logid = arrayindex(regextract(_raw_log, \"\\\\blogid=\\\"?([^\\\"\\\\s]*)\"), 0), fg_subtype = arrayindex(regextract(_raw_log, \"\\\\bsubtype=\\\"?([^\\\"\\\\s]*)\"), 0), fg_user = arrayindex(regextract(_raw_log, \"\\\\buser=\\\"?([^\\\"\\\\s]*)\"), 0), fg_srcip = arrayindex(regextract(_raw_log, \"\\\\bsrcip=\\\"?([^\\\"\\\\s]*)\"), 0), fg_ui = arrayindex(regextract(_raw_log, \"\\\\bui=\\\"?([^\\\"\\\\s]*)\"), 0), fg_devname = arrayindex(regextract(_raw_log, \"\\\\bdevname=\\\"?([^\\\"\\\\s]*)\"), 0), fg_logdesc = arrayindex(regextract(_raw_log, \"\\\\blogdesc=\\\"([^\\\"]*)\\\"\"), 0), fg_msg = arrayindex(regextract(_raw_log, \"\\\\bmsg=\\\"([^\\\"]*)\\\"\"), 0)\n| filter fg_subtype = \"system\" and (fg_logdesc ~= \"(?i)(backup|back up|backed up|download).*(conf|configuration)|(conf|configuration).*(backup|backed up|download)\" or fg_msg ~= \"(?i)(backup|back up|backed up|download).*(conf|configuration)|(conf|configuration).*(backup|backed up|download)\")\n| fields _time, fg_devname, fg_logid, fg_user, fg_srcip, fg_ui, fg_logdesc, fg_msg\n| sort desc _time\n| limit 1000\n",
+   "spl": "`fortigate`\n| where lower(subtype)=\"system\" AND (match(logdesc, \"(?i)(backup|back up|backed up|download).*(conf|configuration)|(conf|configuration).*(backup|backed up|download)\") OR match(msg, \"(?i)(backup|back up|backed up|download).*(conf|configuration)|(conf|configuration).*(backup|backed up|download)\"))\n| table _time devname logid user srcip ui logdesc msg\n| sort - _time\n",
+   "tests": {
+    "match": [
+     {
+      "fg.subtype": "system",
+      "fg.logdesc": "System configuration backed up",
+      "fg.user": "support",
+      "fg.ui": "GUI(193.24.211.61)"
+     },
+     {
+      "fg.subtype": "system",
+      "fg.logdesc": "Admin performed an action from GUI",
+      "fg.msg": "User support downloaded the configuration file via GUI(193.24.211.61)"
+     }
+    ],
+    "no_match": [
+     {
+      "fg.subtype": "system",
+      "fg.logdesc": "Object attribute configured",
+      "fg.msg": "Edit firewall.address WEB-SRV-01"
+     },
+     {
+      "fg.subtype": "vpn",
+      "fg.logdesc": "SSL VPN tunnel up",
+      "fg.msg": "SSL tunnel established"
+     }
+    ]
+   }
+  },
+  {
+   "id": "DL-0071",
+   "title": "FortiGate firewall policy set to accept any source to any destination",
+   "description": "A firewall policy was added or edited so that both the source and destination address are \"all\" and the action is accept. In one 2026 FortiGate intrusion the attacker added four such policies to open every zone to every other zone. Real admins rarely write an all-to-all accept rule, so it is a cheap, strong signal. FortiGate event log only.",
+   "attack": [
+    "T1562.004",
+    "T1133"
+   ],
+   "tactic": "persistence",
+   "severity": "high",
+   "logsource": "fortigate",
+   "selections": {
+    "policy_change": [
+     {
+      "field": "fg.cfgpath",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "firewall.policy"
+      ]
+     },
+     {
+      "field": "fg.action",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "Add",
+       "Edit"
+      ]
+     }
+    ],
+    "any_any": [
+     {
+      "field": "fg.cfgattr",
+      "op": "re",
+      "all": true,
+      "values": [
+       "srcaddr\\[([^\\]]*->)?all\\]",
+       "dstaddr\\[([^\\]]*->)?all\\]"
+      ]
+     }
+    ]
+   },
+   "condition": {
+    "and": [
+     {
+      "sel": "policy_change"
+     },
+     {
+      "sel": "any_any"
+     }
+    ]
+   },
+   "condition_text": "policy_change and any_any",
+   "triage": [
+    "Read cfgobj (the policy ID) and cfgattr, then check which interfaces the policy joins. WAN to LAN is an emergency.",
+    "Look at who made the change and how they logged in (DL-0068). Then search the traffic log for sessions that used the new policy ID."
+   ],
+   "false_positives": [
+    "Temporary troubleshooting rules. They should have a ticket and be deleted the same day."
+   ],
+   "xql": "config case_sensitive = false\n| dataset = fortinet_fortigate_raw\n| filter _raw_log != null\n| alter fg_logid = arrayindex(regextract(_raw_log, \"\\\\blogid=\\\"?([^\\\"\\\\s]*)\"), 0), fg_action = arrayindex(regextract(_raw_log, \"\\\\baction=\\\"?([^\\\"\\\\s]*)\"), 0), fg_user = arrayindex(regextract(_raw_log, \"\\\\buser=\\\"?([^\\\"\\\\s]*)\"), 0), fg_srcip = arrayindex(regextract(_raw_log, \"\\\\bsrcip=\\\"?([^\\\"\\\\s]*)\"), 0), fg_ui = arrayindex(regextract(_raw_log, \"\\\\bui=\\\"?([^\\\"\\\\s]*)\"), 0), fg_cfgpath = arrayindex(regextract(_raw_log, \"\\\\bcfgpath=\\\"?([^\\\"\\\\s]*)\"), 0), fg_devname = arrayindex(regextract(_raw_log, \"\\\\bdevname=\\\"?([^\\\"\\\\s]*)\"), 0), fg_logdesc = arrayindex(regextract(_raw_log, \"\\\\blogdesc=\\\"([^\\\"]*)\\\"\"), 0), fg_msg = arrayindex(regextract(_raw_log, \"\\\\bmsg=\\\"([^\\\"]*)\\\"\"), 0), fg_cfgattr = arrayindex(regextract(_raw_log, \"\\\\bcfgattr=\\\"([^\\\"]*)\\\"\"), 0)\n| filter (fg_cfgpath = \"firewall.policy\" and fg_action in (\"add\", \"edit\")) and (fg_cfgattr ~= \"(?i)srcaddr\\\\[([^\\\\]]*->)?all\\\\]\" and fg_cfgattr ~= \"(?i)dstaddr\\\\[([^\\\\]]*->)?all\\\\]\")\n| fields _time, fg_devname, fg_logid, fg_user, fg_srcip, fg_ui, fg_logdesc, fg_msg\n| sort desc _time\n| limit 1000\n",
+   "spl": "`fortigate`\n| where (lower(cfgpath)=\"firewall.policy\" AND (lower(action)=\"add\" OR lower(action)=\"edit\")) AND (match(cfgattr, \"(?i)srcaddr\\\\[([^\\\\]]*->)?all\\\\]\") AND match(cfgattr, \"(?i)dstaddr\\\\[([^\\\\]]*->)?all\\\\]\"))\n| table _time devname logid user srcip ui logdesc msg\n| sort - _time\n",
+   "tests": {
+    "match": [
+     {
+      "fg.subtype": "system",
+      "fg.cfgpath": "firewall.policy",
+      "fg.cfgobj": "98",
+      "fg.action": "Add",
+      "fg.user": "support",
+      "fg.cfgattr": "srcintf[wan1]dstintf[internal]action[accept]srcaddr[all]dstaddr[all]schedule[always]service[ALL]"
+     },
+     {
+      "fg.subtype": "system",
+      "fg.cfgpath": "firewall.policy",
+      "fg.cfgobj": "12",
+      "fg.action": "Edit",
+      "fg.user": "support",
+      "fg.cfgattr": "srcaddr[VPN-USERS->all]dstaddr[SRV-FILES->all]"
+     }
+    ],
+    "no_match": [
+     {
+      "fg.subtype": "system",
+      "fg.cfgpath": "firewall.policy",
+      "fg.cfgobj": "14",
+      "fg.action": "Add",
+      "fg.cfgattr": "srcintf[internal]dstintf[wan1]action[accept]srcaddr[LAN-USERS]dstaddr[all]service[HTTPS]"
+     },
+     {
+      "fg.subtype": "system",
+      "fg.cfgpath": "firewall.address",
+      "fg.cfgobj": "all",
+      "fg.action": "Edit",
+      "fg.cfgattr": "comment[->default]"
+     }
+    ]
+   }
+  },
+  {
+   "id": "DL-0072",
+   "title": "FortiGate log forwarding turned off or pointed somewhere else",
+   "description": "A change under log.* that disables a syslog or FortiAnalyzer target, changes its server, or stops traffic logging. The PEERSTITCH implant (CVE-2025-61624, October 2026) stopped syslog and cleared crash logs to blind the SOC. This is often the last FortiGate event you receive, so pair it with a \"device went silent\" hunt. FortiGate event log only.",
+   "attack": [
+    "T1562.006",
+    "T1562.008"
+   ],
+   "tactic": "defense-evasion",
+   "severity": "high",
+   "logsource": "fortigate",
+   "selections": {
+    "log_settings": [
+     {
+      "field": "fg.cfgpath",
+      "op": "startswith",
+      "all": false,
+      "values": [
+       "log."
+      ]
+     }
+    ],
+    "disabled_or_moved": [
+     {
+      "field": "fg.cfgattr",
+      "op": "re",
+      "all": false,
+      "values": [
+       "status\\[enable->disable\\]|server\\[[^\\]]*->|logtraffic\\[[^\\]]*->disable\\]|upload-option\\[[^\\]]*->"
+      ]
+     }
+    ],
+    "policy_logging_off": [
+     {
+      "field": "fg.cfgpath",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "firewall.policy"
+      ]
+     },
+     {
+      "field": "fg.cfgattr",
+      "op": "re",
+      "all": false,
+      "values": [
+       "logtraffic\\[[^\\]]*->disable\\]"
+      ]
+     }
+    ]
+   },
+   "condition": {
+    "or": [
+     {
+      "and": [
+       {
+        "sel": "log_settings"
+       },
+       {
+        "sel": "disabled_or_moved"
+       }
+      ]
+     },
+     {
+      "sel": "policy_logging_off"
+     }
+    ]
+   },
+   "condition_text": "(log_settings and disabled_or_moved) or policy_logging_off",
+   "triage": [
+    "Check when the device last sent logs to the SIEM. A gap that starts with this change is an attacker cleaning up.",
+    "Re-enable the target, then review admin logins (DL-0068), new admins (DL-0069) and automation objects (DL-0073) from the hour before."
+   ],
+   "false_positives": [
+    "Planned SIEM or collector migrations. They change the server address once, with a ticket."
+   ],
+   "xql": "config case_sensitive = false\n| dataset = fortinet_fortigate_raw\n| filter _raw_log != null\n| alter fg_logid = arrayindex(regextract(_raw_log, \"\\\\blogid=\\\"?([^\\\"\\\\s]*)\"), 0), fg_user = arrayindex(regextract(_raw_log, \"\\\\buser=\\\"?([^\\\"\\\\s]*)\"), 0), fg_srcip = arrayindex(regextract(_raw_log, \"\\\\bsrcip=\\\"?([^\\\"\\\\s]*)\"), 0), fg_ui = arrayindex(regextract(_raw_log, \"\\\\bui=\\\"?([^\\\"\\\\s]*)\"), 0), fg_cfgpath = arrayindex(regextract(_raw_log, \"\\\\bcfgpath=\\\"?([^\\\"\\\\s]*)\"), 0), fg_devname = arrayindex(regextract(_raw_log, \"\\\\bdevname=\\\"?([^\\\"\\\\s]*)\"), 0), fg_logdesc = arrayindex(regextract(_raw_log, \"\\\\blogdesc=\\\"([^\\\"]*)\\\"\"), 0), fg_msg = arrayindex(regextract(_raw_log, \"\\\\bmsg=\\\"([^\\\"]*)\\\"\"), 0), fg_cfgattr = arrayindex(regextract(_raw_log, \"\\\\bcfgattr=\\\"([^\\\"]*)\\\"\"), 0)\n| filter (fg_cfgpath ~= \"(?i)^log\\\\.\" and fg_cfgattr ~= \"(?i)status\\\\[enable->disable\\\\]|server\\\\[[^\\\\]]*->|logtraffic\\\\[[^\\\\]]*->disable\\\\]|upload-option\\\\[[^\\\\]]*->\") or (fg_cfgpath = \"firewall.policy\" and fg_cfgattr ~= \"(?i)logtraffic\\\\[[^\\\\]]*->disable\\\\]\")\n| fields _time, fg_devname, fg_logid, fg_user, fg_srcip, fg_ui, fg_logdesc, fg_msg\n| sort desc _time\n| limit 1000\n",
+   "spl": "`fortigate`\n| where (match(cfgpath, \"(?i)^log\\\\.\") AND match(cfgattr, \"(?i)status\\\\[enable->disable\\\\]|server\\\\[[^\\\\]]*->|logtraffic\\\\[[^\\\\]]*->disable\\\\]|upload-option\\\\[[^\\\\]]*->\")) OR (lower(cfgpath)=\"firewall.policy\" AND match(cfgattr, \"(?i)logtraffic\\\\[[^\\\\]]*->disable\\\\]\"))\n| table _time devname logid user srcip ui logdesc msg\n| sort - _time\n",
+   "tests": {
+    "match": [
+     {
+      "fg.subtype": "system",
+      "fg.cfgpath": "log.syslogd.setting",
+      "fg.action": "Edit",
+      "fg.cfgattr": "status[enable->disable]"
+     },
+     {
+      "fg.subtype": "system",
+      "fg.cfgpath": "log.fortianalyzer.setting",
+      "fg.action": "Edit",
+      "fg.cfgattr": "server[10.10.5.20->203.0.113.50]"
+     },
+     {
+      "fg.subtype": "system",
+      "fg.cfgpath": "firewall.policy",
+      "fg.action": "Edit",
+      "fg.cfgattr": "logtraffic[all->disable]"
+     }
+    ],
+    "no_match": [
+     {
+      "fg.subtype": "system",
+      "fg.cfgpath": "log.syslogd.setting",
+      "fg.action": "Edit",
+      "fg.cfgattr": "status[disable->enable]"
+     },
+     {
+      "fg.subtype": "system",
+      "fg.cfgpath": "firewall.policy",
+      "fg.action": "Edit",
+      "fg.cfgattr": "logtraffic[utm->all]"
+     }
+    ]
+   }
+  },
+  {
+   "id": "DL-0073",
+   "title": "FortiGate automation stitch, action or auto-script created",
+   "description": "A new automation stitch, trigger, action or auto-script. These run CLI commands on a schedule or on an event, which makes them a quiet place to hide persistence. The PEERSTITCH operators used an auto-script to download and start their implant, then deleted it. FortiGate event log only.",
+   "attack": [
+    "T1053",
+    "T1059"
+   ],
+   "tactic": "persistence",
+   "severity": "medium",
+   "logsource": "fortigate",
+   "selections": {
+    "automation": [
+     {
+      "field": "fg.cfgpath",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "system.automation-stitch",
+       "system.automation-action",
+       "system.automation-trigger",
+       "system.auto-script"
+      ]
+     },
+     {
+      "field": "fg.action",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "Add",
+       "Edit"
+      ]
+     }
+    ]
+   },
+   "condition": {
+    "sel": "automation"
+   },
+   "condition_text": "automation",
+   "triage": [
+    "Read the action's script text in the config. Anything that runs execute, fetches a file, or touches /bin is hostile.",
+    "An auto-script that is added and deleted within minutes is the PEERSTITCH pattern. Check the same window for a new admin (DL-0069) and log changes (DL-0072)."
+   ],
+   "false_positives": [
+    "Your own stitches (email on admin login, config backup to FortiManager). They change rarely and through a known admin."
+   ],
+   "xql": "config case_sensitive = false\n| dataset = fortinet_fortigate_raw\n| filter _raw_log != null\n| alter fg_logid = arrayindex(regextract(_raw_log, \"\\\\blogid=\\\"?([^\\\"\\\\s]*)\"), 0), fg_action = arrayindex(regextract(_raw_log, \"\\\\baction=\\\"?([^\\\"\\\\s]*)\"), 0), fg_user = arrayindex(regextract(_raw_log, \"\\\\buser=\\\"?([^\\\"\\\\s]*)\"), 0), fg_srcip = arrayindex(regextract(_raw_log, \"\\\\bsrcip=\\\"?([^\\\"\\\\s]*)\"), 0), fg_ui = arrayindex(regextract(_raw_log, \"\\\\bui=\\\"?([^\\\"\\\\s]*)\"), 0), fg_cfgpath = arrayindex(regextract(_raw_log, \"\\\\bcfgpath=\\\"?([^\\\"\\\\s]*)\"), 0), fg_devname = arrayindex(regextract(_raw_log, \"\\\\bdevname=\\\"?([^\\\"\\\\s]*)\"), 0), fg_logdesc = arrayindex(regextract(_raw_log, \"\\\\blogdesc=\\\"([^\\\"]*)\\\"\"), 0), fg_msg = arrayindex(regextract(_raw_log, \"\\\\bmsg=\\\"([^\\\"]*)\\\"\"), 0)\n| filter fg_cfgpath in (\"system.automation-stitch\", \"system.automation-action\", \"system.automation-trigger\", \"system.auto-script\") and fg_action in (\"add\", \"edit\")\n| fields _time, fg_devname, fg_logid, fg_user, fg_srcip, fg_ui, fg_logdesc, fg_msg\n| sort desc _time\n| limit 1000\n",
+   "spl": "`fortigate`\n| where (lower(cfgpath)=\"system.automation-stitch\" OR lower(cfgpath)=\"system.automation-action\" OR lower(cfgpath)=\"system.automation-trigger\" OR lower(cfgpath)=\"system.auto-script\") AND (lower(action)=\"add\" OR lower(action)=\"edit\")\n| table _time devname logid user srcip ui logdesc msg\n| sort - _time\n",
+   "tests": {
+    "match": [
+     {
+      "fg.subtype": "system",
+      "fg.cfgpath": "system.auto-script",
+      "fg.cfgobj": "upd",
+      "fg.action": "Add",
+      "fg.user": "fmg-sync"
+     },
+     {
+      "fg.subtype": "system",
+      "fg.cfgpath": "system.automation-action",
+      "fg.cfgobj": "cli-run",
+      "fg.action": "Add"
+     }
+    ],
+    "no_match": [
+     {
+      "fg.subtype": "system",
+      "fg.cfgpath": "system.auto-script",
+      "fg.cfgobj": "upd",
+      "fg.action": "Delete"
+     },
+     {
+      "fg.subtype": "system",
+      "fg.cfgpath": "system.interface",
+      "fg.cfgobj": "port3",
+      "fg.action": "Edit"
+     }
+    ]
+   }
+  },
+  {
+   "id": "DL-0074",
+   "title": "Admin or SSL VPN login with an account name used in FortiGate intrusions",
+   "description": "A successful admin or SSL VPN login by an account named like the backdoors reported in the 2026 FortiGate campaigns (support, ssl-admin, backupadmin, itadmin, secadmin, svcadmin, remoteadmin, adccount, audit, deploy). These are created to blend in, so the name alone is a lead, not proof. FortiGate event log only.",
+   "attack": [
+    "T1078",
+    "T1133"
+   ],
+   "tactic": "initial-access",
+   "severity": "medium",
+   "logsource": "fortigate",
+   "selections": {
+    "admin_or_vpn_ok": [
+     {
+      "field": "fg.subtype",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "system",
+       "vpn"
+      ]
+     },
+     {
+      "field": "fg.action",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "login",
+       "tunnel-up",
+       "ssl-login"
+      ]
+     }
+    ],
+    "not_failed": [
+     {
+      "field": "fg.status",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "failed",
+       "failure"
+      ]
+     }
+    ],
+    "backdoor_name": [
+     {
+      "field": "fg.user",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "support",
+       "ssl-admin",
+       "backupadmin",
+       "backup",
+       "itadmin",
+       "secadmin",
+       "svcadmin",
+       "remoteadmin",
+       "adccount",
+       "audit",
+       "deploy",
+       "security",
+       "helpdesk"
+      ]
+     }
+    ]
+   },
+   "condition": {
+    "and": [
+     {
+      "and": [
+       {
+        "sel": "admin_or_vpn_ok"
+       },
+       {
+        "sel": "backdoor_name"
+       }
+      ]
+     },
+     {
+      "not": {
+       "sel": "not_failed"
+      }
+     }
+    ]
+   },
+   "condition_text": "admin_or_vpn_ok and backdoor_name and not not_failed",
+   "triage": [
+    "Check when the account was created (DL-0069). If nobody on your team created it, disable it and start incident response.",
+    "For a VPN login, list everything the tunnel IP touched in the traffic log for the session."
+   ],
+   "false_positives": [
+    "A real account with one of these names. Rename it to something personal and tie it to a person, so this rule stays useful."
+   ],
+   "xql": "config case_sensitive = false\n| dataset = fortinet_fortigate_raw\n| filter _raw_log != null\n| alter fg_logid = arrayindex(regextract(_raw_log, \"\\\\blogid=\\\"?([^\\\"\\\\s]*)\"), 0), fg_subtype = arrayindex(regextract(_raw_log, \"\\\\bsubtype=\\\"?([^\\\"\\\\s]*)\"), 0), fg_action = arrayindex(regextract(_raw_log, \"\\\\baction=\\\"?([^\\\"\\\\s]*)\"), 0), fg_status = arrayindex(regextract(_raw_log, \"\\\\bstatus=\\\"?([^\\\"\\\\s]*)\"), 0), fg_user = arrayindex(regextract(_raw_log, \"\\\\buser=\\\"?([^\\\"\\\\s]*)\"), 0), fg_srcip = arrayindex(regextract(_raw_log, \"\\\\bsrcip=\\\"?([^\\\"\\\\s]*)\"), 0), fg_ui = arrayindex(regextract(_raw_log, \"\\\\bui=\\\"?([^\\\"\\\\s]*)\"), 0), fg_devname = arrayindex(regextract(_raw_log, \"\\\\bdevname=\\\"?([^\\\"\\\\s]*)\"), 0), fg_logdesc = arrayindex(regextract(_raw_log, \"\\\\blogdesc=\\\"([^\\\"]*)\\\"\"), 0), fg_msg = arrayindex(regextract(_raw_log, \"\\\\bmsg=\\\"([^\\\"]*)\\\"\"), 0)\n| filter ((fg_subtype in (\"system\", \"vpn\") and fg_action in (\"login\", \"tunnel-up\", \"ssl-login\")) and fg_user in (\"support\", \"ssl-admin\", \"backupadmin\", \"backup\", \"itadmin\", \"secadmin\", \"svcadmin\", \"remoteadmin\", \"adccount\", \"audit\", \"deploy\", \"security\", \"helpdesk\")) and not ((fg_status != null and fg_status in (\"failed\", \"failure\")))\n| fields _time, fg_devname, fg_logid, fg_user, fg_srcip, fg_ui, fg_logdesc, fg_msg\n| sort desc _time\n| limit 1000\n",
+   "spl": "`fortigate`\n| where (((lower(subtype)=\"system\" OR lower(subtype)=\"vpn\") AND (lower(action)=\"login\" OR lower(action)=\"tunnel-up\" OR lower(action)=\"ssl-login\")) AND (lower(user)=\"support\" OR lower(user)=\"ssl-admin\" OR lower(user)=\"backupadmin\" OR lower(user)=\"backup\" OR lower(user)=\"itadmin\" OR lower(user)=\"secadmin\" OR lower(user)=\"svcadmin\" OR lower(user)=\"remoteadmin\" OR lower(user)=\"adccount\" OR lower(user)=\"audit\" OR lower(user)=\"deploy\" OR lower(user)=\"security\" OR lower(user)=\"helpdesk\")) AND NOT ((isnotnull(status) AND (lower(status)=\"failed\" OR lower(status)=\"failure\")))\n| table _time devname logid user srcip ui logdesc msg\n| sort - _time\n",
+   "tests": {
+    "match": [
+     {
+      "fg.subtype": "vpn",
+      "fg.action": "tunnel-up",
+      "fg.user": "ssl-admin",
+      "fg.remip": "193.24.211.61",
+      "fg.tunneltype": "ssl-tunnel"
+     },
+     {
+      "fg.subtype": "system",
+      "fg.action": "login",
+      "fg.status": "success",
+      "fg.user": "support",
+      "fg.srcip": "193.24.211.61"
+     }
+    ],
+    "no_match": [
+     {
+      "fg.subtype": "system",
+      "fg.action": "login",
+      "fg.status": "failed",
+      "fg.user": "support",
+      "fg.srcip": "45.148.10.200"
+     },
+     {
+      "fg.subtype": "vpn",
+      "fg.action": "tunnel-up",
+      "fg.user": "s.benali",
+      "fg.remip": "197.15.2.40"
+     }
+    ]
+   }
+  },
+  {
+   "id": "DL-0075",
+   "title": "MeshAgent or Pulseway started, or a program run from ProgramData\\USOShared",
+   "description": "Remote management agents that the IT team did not deploy, or any executable started from C:\\ProgramData\\USOShared, a Windows Update folder that normally holds logs, not programs. In a 2026 FortiGate intrusion the attackers moved from the firewall to the servers, installed Pulseway and MeshAgent there, and hid MeshAgent from the uninstall list. Full-telemetry tier: needs an EDR on the servers behind the FortiGate.",
+   "attack": [
+    "T1219",
+    "T1036.005"
+   ],
+   "tactic": "command-and-control",
+   "severity": "high",
+   "logsource": "process_creation",
+   "selections": {
+    "rmm": [
+     {
+      "field": "process.name",
+      "op": "eq",
+      "all": false,
+      "values": [
+       "meshagent.exe",
+       "meshagent64.exe",
+       "pcmonitorsrv.exe",
+       "pcmonitormanager.exe",
+       "pulseway.exe"
+      ]
+     }
+    ],
+    "usoshared": [
+     {
+      "field": "process.path",
+      "op": "startswith",
+      "all": false,
+      "values": [
+       "c:\\programdata\\usoshared\\"
+      ]
+     }
+    ]
+   },
+   "condition": {
+    "or": [
+     {
+      "sel": "rmm"
+     },
+     {
+      "sel": "usoshared"
+     }
+    ]
+   },
+   "condition_text": "rmm or usoshared",
+   "triage": [
+    "Find how the agent arrived (parent process, the logon that started it) and which server it calls home to.",
+    "Check the uninstall keys for SystemComponent=1 on the same host. A hidden RMM agent is a backdoor.",
+    "Walk back to the firewall. Look for a FortiGate admin login, config export or new admin in the days before (DL-0068 to DL-0070)."
+   ],
+   "false_positives": [
+    "An MSP or IT team that really uses MeshCentral or Pulseway. Allow-list the signer and the install path they use."
+   ],
+   "xql": "config case_sensitive = false\n| dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name in (\"meshagent.exe\", \"meshagent64.exe\", \"pcmonitorsrv.exe\", \"pcmonitormanager.exe\", \"pulseway.exe\") or action_process_image_path ~= \"(?i)^c:\\\\\\\\programdata\\\\\\\\usoshared\\\\\\\\\"\n| fields _time, agent_hostname, actor_effective_username, actor_process_image_name, action_process_image_name, action_process_image_command_line\n| sort desc _time\n| limit 1000\n",
+   "spl": "`sysmon` EventCode=1\n| eval process_name=lower(mvindex(split(Image,\"\\\\\"),-1)), parent_name=lower(mvindex(split(ParentImage,\"\\\\\"),-1))\n| where (lower(process_name)=\"meshagent.exe\" OR lower(process_name)=\"meshagent64.exe\" OR lower(process_name)=\"pcmonitorsrv.exe\" OR lower(process_name)=\"pcmonitormanager.exe\" OR lower(process_name)=\"pulseway.exe\") OR match(Image, \"(?i)^c:\\\\\\\\programdata\\\\\\\\usoshared\\\\\\\\\")\n| table _time host User ParentImage Image CommandLine\n| sort - _time\n",
+   "tests": {
+    "match": [
+     {
+      "parent.name": "services.exe",
+      "process.name": "meshagent.exe",
+      "process.path": "C:\\Program Files\\Mesh Agent\\MeshAgent.exe",
+      "process.command_line": "\"C:\\Program Files\\Mesh Agent\\MeshAgent.exe\""
+     },
+     {
+      "parent.name": "cmd.exe",
+      "process.name": "javaw.exe",
+      "process.path": "C:\\ProgramData\\USOShared\\javaw.exe",
+      "process.command_line": "C:\\ProgramData\\USOShared\\javaw.exe -s"
+     }
+    ],
+    "no_match": [
+     {
+      "parent.name": "svchost.exe",
+      "process.name": "usoclient.exe",
+      "process.path": "C:\\Windows\\System32\\usoclient.exe",
+      "process.command_line": "usoclient.exe StartScan"
+     },
+     {
+      "parent.name": "explorer.exe",
+      "process.name": "javaw.exe",
+      "process.path": "C:\\Program Files\\Java\\jre-1.8\\bin\\javaw.exe",
+      "process.command_line": "javaw.exe -jar app.jar"
+     }
+    ]
+   }
   }
  ],
  "logsources": {
@@ -5624,6 +6475,31 @@
    "description": "A line from the web server error log, including PHP errors (Apache error.log; XDR Collector dataset apache_httpd_raw, Splunk sourcetype apache:error)",
    "fields": [
     "log.message"
+   ]
+  },
+  "fortigate": {
+   "description": "A FortiGate log line: event/system (admin logins, config changes), event/vpn and traffic (syslog to a Broker VM, XDR dataset fortinet_fortigate_raw; Splunk Fortinet FortiGate Add-on)",
+   "fields": [
+    "fg.action",
+    "fg.cfgattr",
+    "fg.cfgobj",
+    "fg.cfgpath",
+    "fg.devname",
+    "fg.dstip",
+    "fg.dstport",
+    "fg.logdesc",
+    "fg.logid",
+    "fg.method",
+    "fg.msg",
+    "fg.reason",
+    "fg.remip",
+    "fg.srcip",
+    "fg.status",
+    "fg.subtype",
+    "fg.tunneltype",
+    "fg.type",
+    "fg.ui",
+    "fg.user"
    ]
   },
   "windows_event": {

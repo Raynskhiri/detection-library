@@ -1,0 +1,50 @@
+id: DL-0071
+title: FortiGate firewall policy set to accept any source to any destination
+description: >
+  A firewall policy was added or edited so that both the source and destination address are
+  "all" and the action is accept. In one 2026 FortiGate intrusion the attacker added four such
+  policies to open every zone to every other zone. Real admins rarely write an all-to-all accept
+  rule, so it is a cheap, strong signal. FortiGate event log only.
+attack: [T1562.004, T1133]
+tactic: persistence
+severity: high
+logsource: fortigate
+detection:
+  policy_change:
+    fg.cfgpath: firewall.policy
+    fg.action: [Add, Edit]
+  any_any:
+    fg.cfgattr|re|all: ['srcaddr\[([^\]]*->)?all\]', 'dstaddr\[([^\]]*->)?all\]']
+  condition: policy_change and any_any
+false_positives:
+  - Temporary troubleshooting rules. They should have a ticket and be deleted the same day.
+triage:
+  - Read cfgobj (the policy ID) and cfgattr, then check which interfaces the policy joins. WAN to LAN is an emergency.
+  - Look at who made the change and how they logged in (DL-0068). Then search the traffic log for sessions that used the new policy ID.
+tests:
+  match:
+    - fg.subtype: system
+      fg.cfgpath: firewall.policy
+      fg.cfgobj: "98"
+      fg.action: Add
+      fg.user: support
+      fg.cfgattr: 'srcintf[wan1]dstintf[internal]action[accept]srcaddr[all]dstaddr[all]schedule[always]service[ALL]'
+    - fg.subtype: system
+      fg.cfgpath: firewall.policy
+      fg.cfgobj: "12"
+      fg.action: Edit
+      fg.user: support
+      fg.cfgattr: 'srcaddr[VPN-USERS->all]dstaddr[SRV-FILES->all]'
+  no_match:
+    - fg.subtype: system
+      fg.cfgpath: firewall.policy
+      fg.cfgobj: "14"
+      fg.action: Add
+      fg.cfgattr: 'srcintf[internal]dstintf[wan1]action[accept]srcaddr[LAN-USERS]dstaddr[all]service[HTTPS]'
+    - fg.subtype: system
+      fg.cfgpath: firewall.address
+      fg.cfgobj: all
+      fg.action: Edit
+      fg.cfgattr: 'comment[->default]'
+references:
+  - https://cybersecuritynews.com/fortigate-firewalls-exploited/

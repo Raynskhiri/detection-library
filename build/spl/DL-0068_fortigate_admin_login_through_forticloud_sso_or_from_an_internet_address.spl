@@ -1,0 +1,4 @@
+`fortigate`
+| where (lower(subtype)="system" AND lower(action)="login" AND lower(status)="success") AND ((lower(method)="sso" OR match(ui, "(?i)^sso")) OR NOT ((isnotnull(srcip) AND (cidrmatch("10.0.0.0/8", srcip) OR cidrmatch("172.16.0.0/12", srcip) OR cidrmatch("192.168.0.0/16", srcip) OR cidrmatch("127.0.0.0/8", srcip)))))
+| table _time devname logid user srcip ui logdesc msg
+| sort - _time

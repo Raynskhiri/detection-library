@@ -1,0 +1,4 @@
+`fortigate`
+| where lower(subtype)="system" AND (match(logdesc, "(?i)(backup|back up|backed up|download).*(conf|configuration)|(conf|configuration).*(backup|backed up|download)") OR match(msg, "(?i)(backup|back up|backed up|download).*(conf|configuration)|(conf|configuration).*(backup|backed up|download)"))
+| table _time devname logid user srcip ui logdesc msg
+| sort - _time

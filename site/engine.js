@@ -185,6 +185,17 @@ export function parseJson(text, fieldNames) {
   return { logsource: guess ? guess[0] : "process_creation", event: obj };
 }
 
+/** A FortiGate key=value log line. Keeps the fields the fortigate rules know (fg.*). */
+export function parseFortiGate(line, fieldNames) {
+  const known = new Set((fieldNames && fieldNames.fortigate) || []);
+  const event = {};
+  for (const [, key, quoted, bare] of line.matchAll(/\b([a-z_]+)=(?:"([^"]*)"|(\S*))/g)) {
+    const name = `fg.${key}`;
+    if ((!known.size || known.has(name)) && !(name in event)) event[name] = quoted ?? bare;
+  }
+  return { logsource: "fortigate", event };
+}
+
 /** A bare command line, as an analyst would copy it from an alert. */
 export function parseCommandLine(line, parent) {
   const cmd = line.trim();
@@ -207,6 +218,8 @@ export function autoParse(text, fieldNames, parent) {
   if (/^\[[A-Z][a-z]{2} [A-Z][a-z]{2} /.test(t) || /^\[\d{4}-\d{2}-\d{2}/.test(t)) {
     return { kind: "Web server log", logsource: "web_server_error", event: { "log.message": t } };
   }
+  // A FortiGate syslog line: key=value pairs with a logid, for example 'logid="0100044547" type="event" ...'
+  if (/\blogid="?\d+/.test(t)) return { kind: "FortiGate log", ...parseFortiGate(t, fieldNames) };
   if (t.startsWith("{")) return { kind: "JSON", ...parseJson(t, fieldNames) };
   return { kind: "Command line", ...parseCommandLine(t, parent) };
 }

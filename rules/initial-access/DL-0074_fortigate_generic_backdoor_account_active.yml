@@ -1,0 +1,50 @@
+id: DL-0074
+title: Admin or SSL VPN login with an account name used in FortiGate intrusions
+description: >
+  A successful admin or SSL VPN login by an account named like the backdoors reported in the
+  2026 FortiGate campaigns (support, ssl-admin, backupadmin, itadmin, secadmin, svcadmin,
+  remoteadmin, adccount, audit, deploy). These are created to blend in, so the name alone is
+  a lead, not proof. FortiGate event log only.
+attack: [T1078, T1133]
+tactic: initial-access
+severity: medium
+logsource: fortigate
+detection:
+  admin_or_vpn_ok:
+    fg.subtype: [system, vpn]
+    fg.action: [login, tunnel-up, ssl-login]
+  not_failed:
+    fg.status: [failed, failure]
+  backdoor_name:
+    fg.user: [support, ssl-admin, backupadmin, backup, itadmin, secadmin, svcadmin, remoteadmin, adccount, audit, deploy, security, helpdesk]
+  condition: admin_or_vpn_ok and backdoor_name and not not_failed
+false_positives:
+  - A real account with one of these names. Rename it to something personal and tie it to a person, so this rule stays useful.
+triage:
+  - Check when the account was created (DL-0069). If nobody on your team created it, disable it and start incident response.
+  - For a VPN login, list everything the tunnel IP touched in the traffic log for the session.
+tests:
+  match:
+    - fg.subtype: vpn
+      fg.action: tunnel-up
+      fg.user: ssl-admin
+      fg.remip: 193.24.211.61
+      fg.tunneltype: ssl-tunnel
+    - fg.subtype: system
+      fg.action: login
+      fg.status: success
+      fg.user: support
+      fg.srcip: 193.24.211.61
+  no_match:
+    - fg.subtype: system
+      fg.action: login
+      fg.status: failed
+      fg.user: support
+      fg.srcip: 45.148.10.200
+    - fg.subtype: vpn
+      fg.action: tunnel-up
+      fg.user: s.benali
+      fg.remip: 197.15.2.40
+references:
+  - https://ctrlaltnod.com/news/fortinet-patches-critical-cve-2026-24858-after-active-exploits
+  - https://cybersecuritynews.com/fortigate-firewalls-exploited/

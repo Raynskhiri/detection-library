@@ -1,0 +1,53 @@
+id: DL-0069
+title: New administrator account created on a FortiGate
+description: >
+  An object was added under system.admin. Attackers who get into a FortiGate create their own
+  admin, often with a generic name (support, ssl-admin, backup, itadmin, secadmin, svcadmin),
+  so they keep access after the bug is patched. Admin accounts are created a few times a year,
+  so every hit deserves a look. FortiGate event log only.
+attack: [T1136.001, T1098]
+tactic: persistence
+severity: high
+logsource: fortigate
+detection:
+  admin_added:
+    fg.cfgpath: system.admin
+    fg.action: Add
+  condition: admin_added
+false_positives:
+  - A planned change by your own team. Match it to a change ticket and to the admin who made it (user and ui fields).
+triage:
+  - Read who created it (user), from where (ui shows the method and IP) and when. A creator that logged in through SSO or from the internet (DL-0068) is a compromise until proven otherwise.
+  - Check the new account's profile and trusted hosts, and whether it also got VPN access.
+  - Some implants delete their admin after use, so look for an Add and a Delete of the same cfgobj close together.
+tests:
+  match:
+    - fg.subtype: system
+      fg.logid: "0100044547"
+      fg.cfgpath: system.admin
+      fg.cfgobj: support
+      fg.action: Add
+      fg.user: admin
+      fg.ui: sso(104.28.244.115)
+    - fg.subtype: system
+      fg.logid: "0100044547"
+      fg.cfgpath: system.admin
+      fg.cfgobj: ssl-admin
+      fg.action: Add
+      fg.user: admin
+      fg.ui: GUI(10.20.0.15)
+  no_match:
+    - fg.subtype: system
+      fg.logid: "0100044547"
+      fg.cfgpath: system.admin
+      fg.cfgobj: admin
+      fg.action: Edit
+      fg.cfgattr: 'trusthost1[0.0.0.0 0.0.0.0->10.20.0.0 255.255.255.0]'
+    - fg.subtype: system
+      fg.logid: "0100044547"
+      fg.cfgpath: user.local
+      fg.cfgobj: s.benali
+      fg.action: Add
+references:
+  - https://community.fortinet.com/fortigate-3/technical-tip-difference-between-logid-0100044547-and-logid-0100044546-which-are-generated-when-configuration-is-changed-in-the-fortigate-203472
+  - https://cybersecuritynews.com/fortigate-firewalls-exploited/

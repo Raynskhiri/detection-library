@@ -1,0 +1,4 @@
+`fortigate`
+| where (match(cfgpath, "(?i)^log\\.") AND match(cfgattr, "(?i)status\\[enable->disable\\]|server\\[[^\\]]*->|logtraffic\\[[^\\]]*->disable\\]|upload-option\\[[^\\]]*->")) OR (lower(cfgpath)="firewall.policy" AND match(cfgattr, "(?i)logtraffic\\[[^\\]]*->disable\\]"))
+| table _time devname logid user srcip ui logdesc msg
+| sort - _time

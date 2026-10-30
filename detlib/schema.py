@@ -90,6 +90,33 @@ WINEVENT_DATA = {
 }
 
 
+# FortiGate event, VPN and traffic logs (key=value syslog). Each portable name maps to the
+# FortiOS field. In Cortex XDR the Broker VM syslog applet lands them in fortinet_fortigate_raw;
+# the alters below pull each field out of _raw_log so the rules work even when the dataset was
+# ingested without the Fortinet parser. The Fortinet FortiGate Add-on for Splunk extracts the
+# same names. Fields that can hold spaces (logdesc, msg, cfgattr) are always quoted by FortiOS.
+FORTIGATE_TOKENS = ("logid", "type", "subtype", "action", "status", "user", "srcip", "dstip", "dstport",
+                    "ui", "method", "cfgpath", "cfgobj", "tunneltype", "remip", "reason", "devname")
+FORTIGATE_QUOTED = ("logdesc", "msg", "cfgattr")
+
+
+def _fg_alter(name: str) -> str:
+    if name in FORTIGATE_QUOTED:
+        rx = f'\\\\b{name}=\\"([^\\"]*)\\"'
+    else:
+        rx = f'\\\\b{name}=\\"?([^\\"\\\\s]*)'
+    expr = f'arrayindex(regextract(_raw_log, "{rx}"), 0)'
+    if name == "dstport":
+        expr = f"to_integer({expr})"
+    return f"fg_{name} = {expr}"
+
+
+FORTIGATE_FIELDS = {
+    f"fg.{n}": Field(f"fg_{n}", n, numeric=(n == "dstport"))
+    for n in FORTIGATE_TOKENS + FORTIGATE_QUOTED
+}
+
+
 def _evt_alias(portable: str) -> str:
     return "evt_" + portable.replace(".", "_")
 
@@ -173,6 +200,19 @@ SOURCES: dict[str, LogSource] = {
         xql_columns=("_time", "_raw_log"),
         spl_columns=("_time", "host", "_raw"),
         xql_dataset="apache_httpd_raw",
+    ),
+    "fortigate": LogSource(
+        name="fortigate",
+        description="A FortiGate log line: event/system (admin logins, config changes), event/vpn and traffic "
+                    "(syslog to a Broker VM, XDR dataset fortinet_fortigate_raw; Splunk Fortinet FortiGate Add-on)",
+        xql_filter="_raw_log != null",
+        spl_base="`fortigate`",
+        spl_evals=(),
+        fields=FORTIGATE_FIELDS,
+        xql_columns=("_time", "fg_devname", "fg_logid", "fg_user", "fg_srcip", "fg_ui", "fg_logdesc", "fg_msg"),
+        spl_columns=("_time", "devname", "logid", "user", "srcip", "ui", "logdesc", "msg"),
+        xql_alters=tuple(_fg_alter(n) for n in FORTIGATE_TOKENS + FORTIGATE_QUOTED),
+        xql_dataset="fortinet_fortigate_raw",
     ),
     "windows_event": LogSource(
         name="windows_event",

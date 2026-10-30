@@ -1,0 +1,46 @@
+id: DL-0070
+title: FortiGate configuration backed up or downloaded
+description: >
+  The full FortiGate configuration was exported. It holds the LDAP bind account, VPN and admin
+  secrets protected with reversible encryption, plus the network map. In the 2026 campaigns,
+  stealing it was the first thing attackers did, then they decrypted the LDAP service account
+  and walked into Active Directory. FortiGate event log only. Message wording differs a little
+  between FortiOS versions, so the rule matches on the description and the message text.
+attack: [T1552.001, T1005]
+tactic: credential-access
+severity: high
+logsource: fortigate
+detection:
+  system_event:
+    fg.subtype: system
+  backup_text:
+    fg.logdesc|re: '(backup|back up|backed up|download).*(conf|configuration)|(conf|configuration).*(backup|backed up|download)'
+  backup_msg:
+    fg.msg|re: '(backup|back up|backed up|download).*(conf|configuration)|(conf|configuration).*(backup|backed up|download)'
+  condition: system_event and (backup_text or backup_msg)
+false_positives:
+  - Scheduled backups by FortiManager or a backup script. They come from one known IP at a fixed time.
+  - An admin taking a backup before an upgrade. Match it to the change ticket.
+triage:
+  - Treat an export by an unexpected user, from an internet IP or right after a new admin (DL-0069) as a credential theft. Rotate every secret in the file - the LDAP or AD bind account first, then VPN pre-shared keys and local user passwords.
+  - In AD, review logons by the FortiGate bind account from anywhere other than the FortiGate itself.
+  - Exports from the CLI (show full-configuration in the GUI console) do not always log a backup event. Also look for ui=jsconsole sessions from unusual IPs.
+tests:
+  match:
+    - fg.subtype: system
+      fg.logdesc: System configuration backed up
+      fg.user: support
+      fg.ui: GUI(193.24.211.61)
+    - fg.subtype: system
+      fg.logdesc: Admin performed an action from GUI
+      fg.msg: 'User support downloaded the configuration file via GUI(193.24.211.61)'
+  no_match:
+    - fg.subtype: system
+      fg.logdesc: Object attribute configured
+      fg.msg: Edit firewall.address WEB-SRV-01
+    - fg.subtype: vpn
+      fg.logdesc: SSL VPN tunnel up
+      fg.msg: SSL tunnel established
+references:
+  - https://cybersecuritynews.com/fortigate-firewalls-exploited/
+  - https://technewsday.com/?p=49434

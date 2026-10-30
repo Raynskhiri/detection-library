@@ -1,0 +1,64 @@
+id: DL-0068
+title: FortiGate admin login through FortiCloud SSO or from an internet address
+description: >
+  A successful administrator login on a FortiGate that used FortiCloud SSO, or that came
+  from an address outside RFC 1918. The 2026 FortiGate campaigns (CVE-2025-59718,
+  CVE-2025-59719, CVE-2026-24858) all start this way: a crafted SAML login or an attacker's
+  own FortiCloud account gives admin access in seconds, from the internet. Needs only the
+  FortiGate event log, so it works for clients that send nothing else.
+attack: [T1190, T1078]
+tactic: initial-access
+severity: high
+logsource: fortigate
+detection:
+  admin_login_ok:
+    fg.subtype: system
+    fg.action: login
+    fg.status: success
+  sso:
+    fg.method: sso
+  sso_ui:
+    fg.ui|startswith: sso
+  internal_source:
+    fg.srcip|cidr: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 127.0.0.0/8]
+  condition: admin_login_ok and (sso or sso_ui or not internal_source)
+false_positives:
+  - Admins who really use FortiCloud SSO. List them and confirm each login with the person.
+  - Management from a provider or MSSP public IP. Allow-list those exact addresses, never a whole range.
+triage:
+  - Check the source IP against the IOCs in the Fortinet advisories (FG-IR-26-060) and look at what the session did next. Config download (DL-0070), new admin (DL-0069) or a permissive policy (DL-0071) within minutes means compromise.
+  - Confirm the firmware is patched and set admin-forticloud-sso-login to disable under config system global until it is.
+  - Restrict the management interface to trusted hosts. An admin GUI reachable from the internet is the root problem.
+tests:
+  match:
+    - fg.subtype: system
+      fg.action: login
+      fg.status: success
+      fg.method: sso
+      fg.user: cloud-noc@mail.io
+      fg.srcip: 104.28.244.115
+      fg.ui: sso(104.28.244.115)
+    - fg.subtype: system
+      fg.action: login
+      fg.status: success
+      fg.method: https
+      fg.user: admin
+      fg.srcip: 38.54.6.28
+      fg.ui: https(38.54.6.28)
+  no_match:
+    - fg.subtype: system
+      fg.action: login
+      fg.status: success
+      fg.method: https
+      fg.user: admin
+      fg.srcip: 10.20.0.15
+      fg.ui: https(10.20.0.15)
+    - fg.subtype: system
+      fg.action: login
+      fg.status: failed
+      fg.method: https
+      fg.user: admin
+      fg.srcip: 45.148.10.200
+references:
+  - https://fortiguard.fortinet.com/psirt/FG-IR-26-060
+  - https://www.rapid7.com/blog/post/etr-critical-vulnerabilities-in-fortinet-cve-2025-59718-cve-2025-59719-exploited-in-the-wild/

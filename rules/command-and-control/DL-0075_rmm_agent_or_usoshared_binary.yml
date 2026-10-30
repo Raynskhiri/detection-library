@@ -1,0 +1,45 @@
+id: DL-0075
+title: MeshAgent or Pulseway started, or a program run from ProgramData\USOShared
+description: >
+  Remote management agents that the IT team did not deploy, or any executable started from
+  C:\ProgramData\USOShared, a Windows Update folder that normally holds logs, not programs. In a
+  2026 FortiGate intrusion the attackers moved from the firewall to the servers, installed
+  Pulseway and MeshAgent there, and hid MeshAgent from the uninstall list. Full-telemetry tier:
+  needs an EDR on the servers behind the FortiGate.
+attack: [T1219, T1036.005]
+tactic: command-and-control
+severity: high
+logsource: process_creation
+detection:
+  rmm:
+    process.name: [meshagent.exe, meshagent64.exe, pcmonitorsrv.exe, pcmonitormanager.exe, pulseway.exe]
+  usoshared:
+    process.path|startswith: 'c:\programdata\usoshared\'
+  condition: rmm or usoshared
+false_positives:
+  - An MSP or IT team that really uses MeshCentral or Pulseway. Allow-list the signer and the install path they use.
+triage:
+  - Find how the agent arrived (parent process, the logon that started it) and which server it calls home to.
+  - Check the uninstall keys for SystemComponent=1 on the same host. A hidden RMM agent is a backdoor.
+  - Walk back to the firewall. Look for a FortiGate admin login, config export or new admin in the days before (DL-0068 to DL-0070).
+tests:
+  match:
+    - parent.name: services.exe
+      process.name: meshagent.exe
+      process.path: 'C:\Program Files\Mesh Agent\MeshAgent.exe'
+      process.command_line: '"C:\Program Files\Mesh Agent\MeshAgent.exe"'
+    - parent.name: cmd.exe
+      process.name: javaw.exe
+      process.path: 'C:\ProgramData\USOShared\javaw.exe'
+      process.command_line: 'C:\ProgramData\USOShared\javaw.exe -s'
+  no_match:
+    - parent.name: svchost.exe
+      process.name: usoclient.exe
+      process.path: 'C:\Windows\System32\usoclient.exe'
+      process.command_line: 'usoclient.exe StartScan'
+    - parent.name: explorer.exe
+      process.name: javaw.exe
+      process.path: 'C:\Program Files\Java\jre-1.8\bin\javaw.exe'
+      process.command_line: 'javaw.exe -jar app.jar'
+references:
+  - https://cybersecuritynews.com/fortigate-firewalls-exploited/

@@ -1,0 +1,50 @@
+id: DL-0072
+title: FortiGate log forwarding turned off or pointed somewhere else
+description: >
+  A change under log.* that disables a syslog or FortiAnalyzer target, changes its server, or
+  stops traffic logging. The PEERSTITCH implant (CVE-2025-61624, October 2026) stopped syslog and
+  cleared crash logs to blind the SOC. This is often the last FortiGate event you receive, so
+  pair it with a "device went silent" hunt. FortiGate event log only.
+attack: [T1562.006, T1562.008]
+tactic: defense-evasion
+severity: high
+logsource: fortigate
+detection:
+  log_settings:
+    fg.cfgpath|startswith: log.
+  disabled_or_moved:
+    fg.cfgattr|re: 'status\[enable->disable\]|server\[[^\]]*->|logtraffic\[[^\]]*->disable\]|upload-option\[[^\]]*->'
+  policy_logging_off:
+    fg.cfgpath: firewall.policy
+    fg.cfgattr|re: 'logtraffic\[[^\]]*->disable\]'
+  condition: (log_settings and disabled_or_moved) or policy_logging_off
+false_positives:
+  - Planned SIEM or collector migrations. They change the server address once, with a ticket.
+triage:
+  - Check when the device last sent logs to the SIEM. A gap that starts with this change is an attacker cleaning up.
+  - Re-enable the target, then review admin logins (DL-0068), new admins (DL-0069) and automation objects (DL-0073) from the hour before.
+tests:
+  match:
+    - fg.subtype: system
+      fg.cfgpath: log.syslogd.setting
+      fg.action: Edit
+      fg.cfgattr: 'status[enable->disable]'
+    - fg.subtype: system
+      fg.cfgpath: log.fortianalyzer.setting
+      fg.action: Edit
+      fg.cfgattr: 'server[10.10.5.20->203.0.113.50]'
+    - fg.subtype: system
+      fg.cfgpath: firewall.policy
+      fg.action: Edit
+      fg.cfgattr: 'logtraffic[all->disable]'
+  no_match:
+    - fg.subtype: system
+      fg.cfgpath: log.syslogd.setting
+      fg.action: Edit
+      fg.cfgattr: 'status[disable->enable]'
+    - fg.subtype: system
+      fg.cfgpath: firewall.policy
+      fg.action: Edit
+      fg.cfgattr: 'logtraffic[utm->all]'
+references:
+  - https://thehackernews.com/2026/10/attackers-exploit-fortios-flaw-to.html

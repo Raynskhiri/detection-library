@@ -1,0 +1,4 @@
+`fortigate`
+| where (lower(cfgpath)="system.automation-stitch" OR lower(cfgpath)="system.automation-action" OR lower(cfgpath)="system.automation-trigger" OR lower(cfgpath)="system.auto-script") AND (lower(action)="add" OR lower(action)="edit")
+| table _time devname logid user srcip ui logdesc msg
+| sort - _time

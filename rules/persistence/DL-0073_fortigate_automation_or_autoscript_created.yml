@@ -1,0 +1,42 @@
+id: DL-0073
+title: FortiGate automation stitch, action or auto-script created
+description: >
+  A new automation stitch, trigger, action or auto-script. These run CLI commands on a schedule or
+  on an event, which makes them a quiet place to hide persistence. The PEERSTITCH operators used
+  an auto-script to download and start their implant, then deleted it. FortiGate event log only.
+attack: [T1053, T1059]
+tactic: persistence
+severity: medium
+logsource: fortigate
+detection:
+  automation:
+    fg.cfgpath: [system.automation-stitch, system.automation-action, system.automation-trigger, system.auto-script]
+    fg.action: [Add, Edit]
+  condition: automation
+false_positives:
+  - Your own stitches (email on admin login, config backup to FortiManager). They change rarely and through a known admin.
+triage:
+  - Read the action's script text in the config. Anything that runs execute, fetches a file, or touches /bin is hostile.
+  - An auto-script that is added and deleted within minutes is the PEERSTITCH pattern. Check the same window for a new admin (DL-0069) and log changes (DL-0072).
+tests:
+  match:
+    - fg.subtype: system
+      fg.cfgpath: system.auto-script
+      fg.cfgobj: upd
+      fg.action: Add
+      fg.user: fmg-sync
+    - fg.subtype: system
+      fg.cfgpath: system.automation-action
+      fg.cfgobj: cli-run
+      fg.action: Add
+  no_match:
+    - fg.subtype: system
+      fg.cfgpath: system.auto-script
+      fg.cfgobj: upd
+      fg.action: Delete
+    - fg.subtype: system
+      fg.cfgpath: system.interface
+      fg.cfgobj: port3
+      fg.action: Edit
+references:
+  - https://thehackernews.com/2026/10/attackers-exploit-fortios-flaw-to.html

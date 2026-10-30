@@ -1,0 +1,4 @@
+`fortigate`
+| where lower(cfgpath)="system.admin" AND lower(action)="add"
+| table _time devname logid user srcip ui logdesc msg
+| sort - _time

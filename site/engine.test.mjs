@@ -67,6 +67,17 @@ test("JSON with Sysmon field names and auto-detect", () => {
   assert.deepEqual(evaluate(rules, p.logsource, p.event).map((r) => r.id), ["DL-0027"]);
 });
 
+test("a pasted FortiGate log line is parsed and matched", () => {
+  const line = 'date=2026-10-29 time=03:12:44 devname="FGT-HQ" logid="0100044547" type="event" subtype="system" ' +
+    'level="information" logdesc="Object attribute configured" user="admin" ui="sso(104.28.244.115)" action="Add" ' +
+    'cfgtid=1835040 cfgpath="system.admin" cfgobj="support" cfgattr="accprofile[super_admin]vdom[root]" msg="Add system.admin support"';
+  const p = autoParse(line, fieldNames);
+  assert.equal(p.logsource, "fortigate");
+  assert.equal(p.event["fg.cfgpath"], "system.admin");
+  assert.equal(p.event["fg.msg"], "Add system.admin support");
+  assert.deepEqual(evaluate(rules, p.logsource, p.event).map((r) => r.id), ["DL-0069"]);
+});
+
 test("unsupported Sysmon event id gives a clear error", () => {
   assert.throws(() => parseSysmonXml("<Event><System><EventID>4</EventID></System></Event>"), /not covered/);
 });
